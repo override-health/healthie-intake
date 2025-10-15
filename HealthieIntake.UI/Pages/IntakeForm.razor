@@ -35,22 +35,30 @@
     else if (form != null)
     {
         <EditForm Model="@formSubmission" OnValidSubmit="@HandleSubmit">
-            <div class="card mb-3">
-                <div class="card-body">
-                    <h5 class="card-title">Patient Information</h5>
-                    <div class="mb-3">
-                        <label for="patientId" class="form-label">Patient Healthie ID <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="patientId" @bind="patientId" required />
-                        <div class="form-text">Enter the Healthie patient ID for this form submission</div>
+            <!-- Progress Indicator -->
+            <div class="alert alert-info mb-3">
+                <strong>Step @currentStep of @totalSteps:</strong> @GetSectionTitle()
+            </div>
+
+            @if (currentStep == 1)
+            {
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">Patient Information</h5>
+                        <div class="mb-3">
+                            <label for="patientId" class="form-label">Patient Healthie ID <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="patientId" @bind="patientId" required />
+                            <div class="form-text">Enter the Healthie patient ID for this form submission</div>
+                        </div>
                     </div>
                 </div>
-            </div>
+            }
 
             <div class="card">
                 <div class="card-body">
-                    <h5 class="card-title">@form.Name</h5>
+                    <h5 class="card-title">@GetSectionTitle()</h5>
 
-                    @foreach (var module in form.CustomModules)
+                    @foreach (var module in GetModulesForCurrentStep())
                     {
                         <div class="mb-3">
                             @if (module.ModType == "label" || module.ModType == "read_only")
@@ -268,18 +276,43 @@
                 </div>
             </div>
 
-            <div class="mt-3 mb-5">
-                <button type="submit" class="btn btn-primary btn-lg" disabled="@submitting">
-                    @if (submitting)
+            <!-- Navigation Buttons -->
+            <div class="mt-4 mb-5 d-flex justify-content-between">
+                <div>
+                    @if (currentStep > 1)
                     {
-                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                        <span>Submitting...</span>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="PreviousStep">
+                            &larr; Previous
+                        </button>
+                    }
+                </div>
+                <div>
+                    <button type="button" class="btn btn-outline-primary" @onclick="SaveAndExit">
+                        Save & Exit
+                    </button>
+                </div>
+                <div>
+                    @if (currentStep < totalSteps)
+                    {
+                        <button type="button" class="btn btn-primary" @onclick="NextStep">
+                            Next &rarr;
+                        </button>
                     }
                     else
                     {
-                        <span>Submit Form</span>
+                        <button type="submit" class="btn btn-primary btn-lg" disabled="@submitting">
+                            @if (submitting)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                <span>Submitting...</span>
+                            }
+                            else
+                            {
+                                <span>Submit Form</span>
+                            }
+                        </button>
                     }
-                </button>
+                </div>
             </div>
         </EditForm>
 
@@ -315,6 +348,10 @@
     private ElementReference addressInputRef;
     private DotNetObjectReference<IntakeForm>? dotNetHelper;
     private string? addressModuleId;
+
+    // Multi-step navigation
+    private int currentStep = 1;
+    private const int totalSteps = 5;
 
     protected override async Task OnInitializedAsync()
     {
@@ -375,8 +412,8 @@
     {
         await JSRuntime.InvokeVoidAsync("console.log", $"OnAfterRenderAsync called. firstRender={firstRender}, addressModuleId={addressModuleId}, loading={loading}");
 
-        // Wait until data is loaded and we have the addressModuleId
-        if (!loading && addressModuleId != null && dotNetHelper == null)
+        // Wait until data is loaded, we have the addressModuleId, and we're on step 2
+        if (!loading && addressModuleId != null && currentStep == 2 && dotNetHelper == null)
         {
             try
             {
@@ -588,6 +625,7 @@
             var progress = new
             {
                 patientId = patientId,
+                currentStep = currentStep,
                 formAnswers = formAnswers,
                 dateMonths = dateMonths,
                 dateDays = dateDays,
@@ -614,6 +652,12 @@
             if (!string.IsNullOrEmpty(json))
             {
                 var progress = JsonSerializer.Deserialize<JsonElement>(json);
+
+                // Load current step
+                if (progress.TryGetProperty("currentStep", out var step))
+                {
+                    currentStep = step.GetInt32();
+                }
 
                 // Load formAnswers
                 if (progress.TryGetProperty("formAnswers", out var answers))
@@ -685,5 +729,85 @@
         {
             Console.WriteLine($"Failed to clear progress: {ex.Message}");
         }
+    }
+
+    // Multi-step navigation methods
+    private List<CustomModule> GetModulesForCurrentStep()
+    {
+        if (form == null) return new List<CustomModule>();
+
+        var allModules = form.CustomModules.ToList();
+
+        return currentStep switch
+        {
+            // Section 1: Introduction + Patient ID (shown separately, just the intro label)
+            1 => allModules.Where(m => m.Label.Contains("Thank you for taking")).ToList(),
+
+            // Section 2: Date of birth → Primary care physician
+            2 => allModules.Where(m =>
+                m.Label.Contains("Date of birth") ||
+                m.Label == "Address" ||
+                m.Label == "Sex" ||
+                m.Label == "BMI" ||
+                m.Label.Contains("Referring physician") ||
+                m.Label.Contains("Primary care physician")).ToList(),
+
+            // Section 3: Relationship status → Emergency contact
+            3 => allModules.Where(m =>
+                m.Label.Contains("Relationship status") ||
+                m.Label.Contains("Employment status") ||
+                m.Label.Contains("Occupation") ||
+                m.Label.Contains("Emergency contact")).ToList(),
+
+            // Section 4: Pain Assessment section
+            4 => allModules.SkipWhile(m => m.Label != "PAIN ASSESSMENT")
+                          .TakeWhile(m => m.Label != "MEDICAL HISTORY")
+                          .ToList(),
+
+            // Section 5: Medical History section
+            5 => allModules.SkipWhile(m => m.Label != "MEDICAL HISTORY").ToList(),
+
+            _ => new List<CustomModule>()
+        };
+    }
+
+    private string GetSectionTitle()
+    {
+        return currentStep switch
+        {
+            1 => "Welcome",
+            2 => "Personal Information",
+            3 => "Demographics & Emergency Contact",
+            4 => "Pain Assessment",
+            5 => "Medical History",
+            _ => "Patient Intake Form"
+        };
+    }
+
+    private async Task NextStep()
+    {
+        if (currentStep < totalSteps)
+        {
+            await SaveFormProgress();
+            currentStep++;
+            StateHasChanged();
+        }
+    }
+
+    private async Task PreviousStep()
+    {
+        if (currentStep > 1)
+        {
+            await SaveFormProgress();
+            currentStep--;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveAndExit()
+    {
+        await SaveFormProgress();
+        // Could navigate away or show a message
+        successMessage = "Progress saved! You can return to complete the form later.";
     }
 }
