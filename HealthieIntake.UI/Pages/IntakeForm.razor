@@ -1,0 +1,689 @@
+@page "/"
+@inject HttpClient Http
+@inject IConfiguration Configuration
+@inject IJSRuntime JSRuntime
+@using HealthieIntake.UI.Models
+@using System.Text.Json
+@using Microsoft.JSInterop
+@implements IDisposable
+
+<PageTitle>Patient Intake Form</PageTitle>
+
+<div class="container mt-4">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <img src="https://i0.wp.com/override.health/wp-content/uploads/2025/08/Override-Logo_Full-Color-e1757963862728.png?w=2860&ssl=1"
+             alt="Override Health"
+             style="height: 60px;" />
+        <h1 class="mb-0">Patient Intake Form</h1>
+    </div>
+
+    @if (loading)
+    {
+        <div class="text-center">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p>Loading form...</p>
+        </div>
+    }
+    else if (errorMessage != null)
+    {
+        <div class="alert alert-danger">
+            <strong>Error:</strong> @errorMessage
+        </div>
+    }
+    else if (form != null)
+    {
+        <EditForm Model="@formSubmission" OnValidSubmit="@HandleSubmit">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Patient Information</h5>
+                    <div class="mb-3">
+                        <label for="patientId" class="form-label">Patient Healthie ID <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="patientId" @bind="patientId" required />
+                        <div class="form-text">Enter the Healthie patient ID for this form submission</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">@form.Name</h5>
+
+                    @foreach (var module in form.CustomModules)
+                    {
+                        <div class="mb-3">
+                            @if (module.ModType == "label" || module.ModType == "read_only")
+                            {
+                                <div class="alert alert-info">
+                                    @((MarkupString)module.Label)
+                                </div>
+                            }
+                            else
+                            {
+                                <label class="form-label fw-bold">
+                                    @module.Label
+                                    @if (module.Required)
+                                    {
+                                        <span class="text-danger">*</span>
+                                    }
+                                </label>
+
+                                @switch (module.ModType)
+                                {
+                                    case "text":
+                                        <input type="text" class="form-control"
+                                               @bind="formAnswers[module.Id]"
+                                               @bind:event="oninput"
+                                               @bind:after="SaveFormProgress"
+                                               required="@module.Required" />
+                                        break;
+
+                                    case "textarea":
+                                        <textarea class="form-control" rows="3"
+                                                  @bind="formAnswers[module.Id]"
+                                                  @bind:event="oninput"
+                                                  @bind:after="SaveFormProgress"
+                                                  required="@module.Required"></textarea>
+                                        break;
+
+                                    case "date":
+                                        <div class="row g-2">
+                                            <div class="col-4">
+                                                <input type="text" class="form-control"
+                                                       @bind="dateMonths[module.Id]"
+                                                       @bind:event="oninput"
+                                                       @bind:after="SaveFormProgress"
+                                                       placeholder="MM"
+                                                       maxlength="2"
+                                                       required="@module.Required" />
+                                            </div>
+                                            <div class="col-4">
+                                                <input type="text" class="form-control"
+                                                       @bind="dateDays[module.Id]"
+                                                       @bind:event="oninput"
+                                                       @bind:after="SaveFormProgress"
+                                                       placeholder="DD"
+                                                       maxlength="2"
+                                                       required="@module.Required" />
+                                            </div>
+                                            <div class="col-4">
+                                                <input type="text" class="form-control"
+                                                       @bind="dateYears[module.Id]"
+                                                       @bind:event="oninput"
+                                                       @bind:after="SaveFormProgress"
+                                                       placeholder="YYYY"
+                                                       maxlength="4"
+                                                       required="@module.Required" />
+                                            </div>
+                                        </div>
+                                        break;
+
+                                    case "radio":
+                                    case "horizontal_radio":
+                                        <div class="mt-2">
+                                        @if (module.Label.Equals("Sex", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            var sexOptions = new[] { "Female", "Male", "Other" };
+                                            foreach (var option in sexOptions)
+                                            {
+                                                <div class="form-check form-check-inline">
+                                                    <input class="form-check-input" type="radio"
+                                                           name="@module.Id"
+                                                           id="@($"{module.Id}_{option}")"
+                                                           value="@option"
+                                                           checked="@(formAnswers.GetValueOrDefault(module.Id) == option)"
+                                                           @onchange="@(async () => { formAnswers[module.Id] = option; await SaveFormProgress(); })"
+                                                           required="@module.Required" />
+                                                    <label class="form-check-label" for="@($"{module.Id}_{option}")">
+                                                        @option
+                                                    </label>
+                                                </div>
+                                            }
+                                        }
+                                        else if (module.Label.Equals("Employment status", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            var employmentOptions = new[] { "Employed", "Unemployed", "Retired" };
+                                            foreach (var option in employmentOptions)
+                                            {
+                                                <div class="form-check form-check-inline">
+                                                    <input class="form-check-input" type="radio"
+                                                           name="@module.Id"
+                                                           id="@($"{module.Id}_{option}")"
+                                                           value="@option"
+                                                           checked="@(formAnswers.GetValueOrDefault(module.Id) == option)"
+                                                           @onchange="@(async () => { formAnswers[module.Id] = option; await SaveFormProgress(); })"
+                                                           required="@module.Required" />
+                                                    <label class="form-check-label" for="@($"{module.Id}_{option}")">
+                                                        @option
+                                                    </label>
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            var legend = GetScaleLegend(module.Label);
+                                            var maxValue = (module.Label.Contains("anxious") || module.Label.Contains("worrying") ||
+                                                           module.Label.Contains("depressed") || module.Label.Contains("interest or pleasure")) ? 3 : 10;
+
+                                            @if (!string.IsNullOrEmpty(legend))
+                                            {
+                                                <div class="form-text mb-2">@legend</div>
+                                            }
+                                            <div>
+                                                @for (int i = 0; i <= maxValue; i++)
+                                                {
+                                                    var value = i.ToString();
+                                                    <div class="form-check form-check-inline">
+                                                        <input class="form-check-input" type="radio"
+                                                               name="@module.Id"
+                                                               id="@($"{module.Id}_{i}")"
+                                                               value="@value"
+                                                               checked="@(formAnswers.GetValueOrDefault(module.Id) == value)"
+                                                               @onchange="@(async () => { formAnswers[module.Id] = value; await SaveFormProgress(); })"
+                                                               required="@module.Required" />
+                                                        <label class="form-check-label" for="@($"{module.Id}_{i}")">
+                                                            @i
+                                                        </label>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        </div>
+                                        break;
+
+                                    case "checkbox":
+                                        @if (module.Label.Equals("Relationship status", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            var relationshipOptions = new[] { "Single", "Married", "Separated / Divorced" };
+                                            <div class="mt-2">
+                                                @foreach (var option in relationshipOptions)
+                                                {
+                                                    var optionValue = option;
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox"
+                                                               id="@($"{module.Id}_{optionValue}")"
+                                                               checked="@(checkboxSelections.GetValueOrDefault(module.Id)?.Contains(optionValue) ?? false)"
+                                                               @onchange="@((ChangeEventArgs e) => HandleCheckboxChange(module.Id, optionValue, (bool)e.Value!))" />
+                                                        <label class="form-check-label" for="@($"{module.Id}_{optionValue}")">
+                                                            @optionValue
+                                                        </label>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <input type="text" class="form-control"
+                                                   @bind="formAnswers[module.Id]"
+                                                   @bind:event="oninput"
+                                                   @bind:after="SaveFormProgress"
+                                                   placeholder="Enter comma-separated values"
+                                                   required="@module.Required" />
+                                            <div class="form-text">Enter multiple selections separated by commas</div>
+                                        }
+                                        break;
+
+                                    case "location":
+                                        <input type="text" class="form-control"
+                                               id="@($"address-{module.Id}")"
+                                               @bind="formAnswers[module.Id]"
+                                               @bind:event="oninput"
+                                               @bind:after="SaveFormProgress"
+                                               placeholder="Start typing your address..."
+                                               autocomplete="off"
+                                               required="@module.Required"
+                                               @ref="addressInputRef" />
+                                        break;
+
+                                    case "signature":
+                                        <input type="text" class="form-control"
+                                               @bind="formAnswers[module.Id]"
+                                               @bind:event="oninput"
+                                               @bind:after="SaveFormProgress"
+                                               placeholder="Type your full name as signature"
+                                               required="@module.Required" />
+                                        break;
+
+                                    case "BMI(in.)":
+                                        <input type="text" class="form-control"
+                                               @bind="formAnswers[module.Id]"
+                                               @bind:event="oninput"
+                                               @bind:after="SaveFormProgress"
+                                               placeholder="e.g., 5 feet 10 inches, 180 lbs"
+                                               required="@module.Required" />
+                                        break;
+
+                                    default:
+                                        <input type="text" class="form-control"
+                                               @bind="formAnswers[module.Id]"
+                                               @bind:event="oninput"
+                                               @bind:after="SaveFormProgress"
+                                               required="@module.Required" />
+                                        break;
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="mt-3 mb-5">
+                <button type="submit" class="btn btn-primary btn-lg" disabled="@submitting">
+                    @if (submitting)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                        <span>Submitting...</span>
+                    }
+                    else
+                    {
+                        <span>Submit Form</span>
+                    }
+                </button>
+            </div>
+        </EditForm>
+
+        @if (successMessage != null)
+        {
+            <div class="alert alert-success">
+                <strong>Success!</strong> @successMessage
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private CustomModuleForm? form;
+    private Dictionary<string, string> formAnswers = new();
+    private FormAnswerGroupInput formSubmission = new();
+    private string patientId = "3642270"; // Default to test patient
+    private bool loading = true;
+    private bool submitting = false;
+    private string? errorMessage;
+    private string? successMessage;
+    private string formId = "2215494";
+
+    // Date fields - separate month, day, year
+    private Dictionary<string, string> dateMonths = new();
+    private Dictionary<string, string> dateDays = new();
+    private Dictionary<string, string> dateYears = new();
+
+    // Checkbox fields - track multiple selections
+    private Dictionary<string, HashSet<string>> checkboxSelections = new();
+
+    // Mapbox integration
+    private ElementReference addressInputRef;
+    private DotNetObjectReference<IntakeForm>? dotNetHelper;
+    private string? addressModuleId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var apiBaseUrl = Configuration["ApiBaseUrl"];
+            var response = await Http.GetFromJsonAsync<CustomModuleForm>($"{apiBaseUrl}/api/healthie/forms/{formId}");
+
+            if (response != null)
+            {
+                form = response;
+                // Initialize answers dictionary
+                foreach (var module in form.CustomModules)
+                {
+                    if (module.ModType == "label" || module.ModType == "read_only")
+                    {
+                        continue;
+                    }
+
+                    if (module.ModType == "date")
+                    {
+                        dateMonths[module.Id] = string.Empty;
+                        dateDays[module.Id] = string.Empty;
+                        dateYears[module.Id] = string.Empty;
+                    }
+                    else if (module.ModType == "checkbox" && module.Label.Equals("Relationship status", StringComparison.OrdinalIgnoreCase))
+                    {
+                        checkboxSelections[module.Id] = new HashSet<string>();
+                    }
+                    else
+                    {
+                        formAnswers[module.Id] = string.Empty;
+                    }
+                }
+
+                // Load saved progress from localStorage
+                await LoadFormProgress();
+
+                // Find the address module ID
+                var addressModule = form.CustomModules.FirstOrDefault(m => m.ModType == "location");
+                if (addressModule != null)
+                {
+                    addressModuleId = addressModule.Id;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to load form: {ex.Message}";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await JSRuntime.InvokeVoidAsync("console.log", $"OnAfterRenderAsync called. firstRender={firstRender}, addressModuleId={addressModuleId}, loading={loading}");
+
+        // Wait until data is loaded and we have the addressModuleId
+        if (!loading && addressModuleId != null && dotNetHelper == null)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("console.log", "About to initialize Mapbox...");
+
+                // Create the .NET object reference for JavaScript callbacks
+                dotNetHelper = DotNetObjectReference.Create(this);
+
+                // Get Mapbox access token from configuration
+                var mapboxToken = Configuration["MapboxAccessToken"] ?? "";
+
+                await JSRuntime.InvokeVoidAsync("console.log", $"Access token length: {mapboxToken.Length}");
+
+                if (!string.IsNullOrEmpty(mapboxToken))
+                {
+                    // Initialize Mapbox autocomplete
+                    await JSRuntime.InvokeVoidAsync("MapboxAutocomplete.initialize",
+                        $"address-{addressModuleId}",
+                        mapboxToken,
+                        dotNetHelper,
+                        addressModuleId);
+                }
+                else
+                {
+                    await JSRuntime.InvokeVoidAsync("console.error", "Mapbox access token not configured");
+                }
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("console.error", $"Failed to initialize Mapbox: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnAddressSelected(string moduleId, string address)
+    {
+        if (!string.IsNullOrEmpty(address))
+        {
+            formAnswers[moduleId] = address;
+            await SaveFormProgress();
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        dotNetHelper?.Dispose();
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (string.IsNullOrWhiteSpace(patientId))
+        {
+            errorMessage = "Patient ID is required";
+            return;
+        }
+
+        submitting = true;
+        errorMessage = null;
+        successMessage = null;
+
+        try
+        {
+            var apiBaseUrl = Configuration["ApiBaseUrl"];
+
+            // Combine date parts into YYYY-MM-DD format
+            foreach (var moduleId in dateMonths.Keys)
+            {
+                if (!string.IsNullOrWhiteSpace(dateMonths.GetValueOrDefault(moduleId)) &&
+                    !string.IsNullOrWhiteSpace(dateDays.GetValueOrDefault(moduleId)) &&
+                    !string.IsNullOrWhiteSpace(dateYears.GetValueOrDefault(moduleId)))
+                {
+                    var month = dateMonths[moduleId].PadLeft(2, '0');
+                    var day = dateDays[moduleId].PadLeft(2, '0');
+                    var year = dateYears[moduleId];
+                    formAnswers[moduleId] = $"{year}-{month}-{day}";
+                }
+            }
+
+            // Combine checkbox selections into comma-separated string
+            foreach (var kvp in checkboxSelections)
+            {
+                if (kvp.Value.Count > 0)
+                {
+                    formAnswers[kvp.Key] = string.Join(", ", kvp.Value);
+                }
+            }
+
+            formSubmission.CustomModuleFormId = formId;
+            formSubmission.UserId = patientId;
+            formSubmission.FormAnswers = formAnswers
+                .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Value))
+                .Select(kvp => new FormAnswerInput
+                {
+                    CustomModuleId = kvp.Key,
+                    Answer = kvp.Value
+                })
+                .ToList();
+
+            var response = await Http.PostAsJsonAsync($"{apiBaseUrl}/api/healthie/forms/submit", formSubmission);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+                var formAnswerGroupId = result.GetProperty("formAnswerGroupId").GetString();
+                successMessage = $"Form submitted successfully! Form Answer Group ID: {formAnswerGroupId}";
+
+                // Clear localStorage after successful submission
+                await ClearFormProgress();
+
+                // Clear form
+                formAnswers.Clear();
+                dateMonths.Clear();
+                dateDays.Clear();
+                dateYears.Clear();
+                checkboxSelections.Clear();
+                foreach (var module in form!.CustomModules)
+                {
+                    if (module.ModType == "label" || module.ModType == "read_only")
+                    {
+                        continue;
+                    }
+
+                    if (module.ModType == "date")
+                    {
+                        dateMonths[module.Id] = string.Empty;
+                        dateDays[module.Id] = string.Empty;
+                        dateYears[module.Id] = string.Empty;
+                    }
+                    else if (module.ModType == "checkbox" && module.Label.Equals("Relationship status", StringComparison.OrdinalIgnoreCase))
+                    {
+                        checkboxSelections[module.Id] = new HashSet<string>();
+                    }
+                    else
+                    {
+                        formAnswers[module.Id] = string.Empty;
+                    }
+                }
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                errorMessage = $"Failed to submit form: {error}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error submitting form: {ex.Message}";
+        }
+        finally
+        {
+            submitting = false;
+        }
+    }
+
+    private async Task HandleCheckboxChange(string moduleId, string option, bool isChecked)
+    {
+        if (!checkboxSelections.ContainsKey(moduleId))
+        {
+            checkboxSelections[moduleId] = new HashSet<string>();
+        }
+
+        if (isChecked)
+        {
+            checkboxSelections[moduleId].Add(option);
+        }
+        else
+        {
+            checkboxSelections[moduleId].Remove(option);
+        }
+
+        // Save progress to localStorage
+        await SaveFormProgress();
+    }
+
+    private string GetScaleLegend(string label)
+    {
+        if (label.Contains("PEG-3") || label.Contains("pain on average"))
+        {
+            return "0 = No pain, 10 = Pain as bad as you can imagine";
+        }
+        else if (label.Contains("interfered with") && (label.Contains("enjoyment") || label.Contains("activity") || label.Contains("sleep") || label.Contains("relationships")))
+        {
+            return "0 = Does not interfere, 10 = Completely interferes";
+        }
+        else if (label.Contains("overwhelmed") || label.Contains("hopeless"))
+        {
+            return "0 = Not at all, 10 = All the time";
+        }
+        else if (label.Contains("anxious") || label.Contains("worrying") || label.Contains("depressed") || label.Contains("interest or pleasure"))
+        {
+            return "0 = Not at all, 1 = Several days, 2 = More than half the days, 3 = Nearly every day";
+        }
+        else if (label.Contains("surgery upcoming") || label.Contains("opioid medication") || label.Contains("therapist") || label.Contains("unhealthy relationship"))
+        {
+            return "0 = No, 10 = Yes";
+        }
+        return string.Empty;
+    }
+
+    // LocalStorage helper methods
+    private string GetStorageKey() => $"healthie_intake_{patientId}";
+
+    private async Task SaveFormProgress()
+    {
+        try
+        {
+            var progress = new
+            {
+                patientId = patientId,
+                formAnswers = formAnswers,
+                dateMonths = dateMonths,
+                dateDays = dateDays,
+                dateYears = dateYears,
+                checkboxSelections = checkboxSelections.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToList())
+            };
+
+            var json = JsonSerializer.Serialize(progress);
+            await JSRuntime.InvokeVoidAsync("localStorage.setItem", GetStorageKey(), json);
+        }
+        catch (Exception ex)
+        {
+            // Silently fail - localStorage is a nice-to-have feature
+            Console.WriteLine($"Failed to save progress: {ex.Message}");
+        }
+    }
+
+    private async Task LoadFormProgress()
+    {
+        try
+        {
+            var json = await JSRuntime.InvokeAsync<string>("localStorage.getItem", GetStorageKey());
+
+            if (!string.IsNullOrEmpty(json))
+            {
+                var progress = JsonSerializer.Deserialize<JsonElement>(json);
+
+                // Load formAnswers
+                if (progress.TryGetProperty("formAnswers", out var answers))
+                {
+                    foreach (var prop in answers.EnumerateObject())
+                    {
+                        formAnswers[prop.Name] = prop.Value.GetString() ?? string.Empty;
+                    }
+                }
+
+                // Load date fields
+                if (progress.TryGetProperty("dateMonths", out var months))
+                {
+                    foreach (var prop in months.EnumerateObject())
+                    {
+                        dateMonths[prop.Name] = prop.Value.GetString() ?? string.Empty;
+                    }
+                }
+
+                if (progress.TryGetProperty("dateDays", out var days))
+                {
+                    foreach (var prop in days.EnumerateObject())
+                    {
+                        dateDays[prop.Name] = prop.Value.GetString() ?? string.Empty;
+                    }
+                }
+
+                if (progress.TryGetProperty("dateYears", out var years))
+                {
+                    foreach (var prop in years.EnumerateObject())
+                    {
+                        dateYears[prop.Name] = prop.Value.GetString() ?? string.Empty;
+                    }
+                }
+
+                // Load checkbox selections
+                if (progress.TryGetProperty("checkboxSelections", out var checkboxes))
+                {
+                    foreach (var prop in checkboxes.EnumerateObject())
+                    {
+                        var selections = new HashSet<string>();
+                        foreach (var item in prop.Value.EnumerateArray())
+                        {
+                            var value = item.GetString();
+                            if (value != null)
+                            {
+                                selections.Add(value);
+                            }
+                        }
+                        checkboxSelections[prop.Name] = selections;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Silently fail - if we can't load, just start fresh
+            Console.WriteLine($"Failed to load progress: {ex.Message}");
+        }
+    }
+
+    private async Task ClearFormProgress()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("localStorage.removeItem", GetStorageKey());
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to clear progress: {ex.Message}");
+        }
+    }
+}

@@ -1,0 +1,164 @@
+/* Override Health Brand Styles */
+
+/* Import fonts */
+@import url('https://fonts.googleapis.com/css2?family=Abhaya+Libre:wght@400;600;700&family=Poppins:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --override-navy: #050038;
+    --override-green: #1CB783;
+    --override-light-bg: #F2F2F5;
+    --override-white: #FFFFFF;
+}
+
+body {
+    font-family: 'Poppins', sans-serif;
+    background-color: var(--override-light-bg);
+    color: var(--override-navy);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Abhaya Libre', serif;
+    color: var(--override-navy);
+}
+
+/* Form Cards */
+.card {
+    border-radius: 15px;
+    border: none;
+    box-shadow: 0 2px 10px rgba(5, 0, 56, 0.05);
+    background-color: var(--override-white);
+}
+
+.card-title {
+    font-family: 'Abhaya Libre', serif;
+    color: var(--override-navy);
+}
+
+/* Form Controls */
+.form-control {
+    border-radius: 8px;
+    border: 1px solid #d1d1d6;
+    padding: 12px 16px;
+    font-family: 'Poppins', sans-serif;
+    transition: border-color 0.3s ease;
+}
+
+.form-control:focus {
+    border-color: var(--override-green);
+    box-shadow: 0 0 0 0.2rem rgba(28, 183, 131, 0.15);
+}
+
+.form-label {
+    font-weight: 500;
+    color: var(--override-navy);
+    margin-bottom: 8px;
+}
+
+/* Buttons */
+.btn-primary {
+    background-color: var(--override-green);
+    border: none;
+    border-radius: 15px;
+    padding: 14px 32px;
+    font-weight: 500;
+    font-family: 'Poppins', sans-serif;
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    background-color: #17a371;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(28, 183, 131, 0.3);
+}
+
+.btn-primary:disabled {
+    background-color: #a0a0a8;
+    transform: none;
+}
+
+/* Radio and Checkbox */
+.form-check-input:checked {
+    background-color: var(--override-green);
+    border-color: var(--override-green);
+}
+
+.form-check-input:focus {
+    border-color: var(--override-green);
+    box-shadow: 0 0 0 0.2rem rgba(28, 183, 131, 0.15);
+}
+
+/* Alerts */
+.alert-success {
+    background-color: rgba(28, 183, 131, 0.1);
+    border-color: var(--override-green);
+    color: var(--override-navy);
+    border-radius: 10px;
+}
+
+.alert-danger {
+    background-color: rgba(220, 53, 69, 0.1);
+    border-color: #dc3545;
+    color: var(--override-navy);
+    border-radius: 10px;
+}
+
+.alert-info {
+    background-color: rgba(5, 0, 56, 0.05);
+    border-color: var(--override-navy);
+    color: var(--override-navy);
+    border-radius: 10px;
+}
+
+/* Form text helper */
+.form-text {
+    color: #6c6c75;
+    font-size: 0.875rem;
+}
+
+/* Container styling */
+.container {
+    background-color: var(--override-white);
+    border-radius: 20px;
+    padding: 40px;
+    margin-top: 30px;
+    margin-bottom: 30px;
+    box-shadow: 0 4px 20px rgba(5, 0, 56, 0.08);
+}
+
+/* Spinner */
+.spinner-border {
+    color: var(--override-green);
+}
+
+/* Required indicator */
+.text-danger {
+    color: #dc3545 !important;
+}
+
+/* Mapbox Geocoder - Make address input wider */
+.mapboxgl-ctrl-geocoder {
+    width: 60vw !important;
+    max-width: 60vw !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+}
+
+.mapboxgl-ctrl-geocoder--input {
+    border-radius: 8px !important;
+    border: 1px solid #d1d1d6 !important;
+    padding: 12px 16px !important;
+    font-family: 'Poppins', sans-serif !important;
+    font-size: 1rem !important;
+    height: auto !important;
+}
+
+.mapboxgl-ctrl-geocoder--input:focus {
+    border-color: var(--override-green) !important;
+    box-shadow: 0 0 0 0.2rem rgba(28, 183, 131, 0.15) !important;
+    outline: none !important;
+}
+
+/* Hide the search icon */
+.mapboxgl-ctrl-geocoder--icon {
+    display: none !important;
+}
