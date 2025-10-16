@@ -403,11 +403,19 @@
                                         break;
 
                                     case "signature":
-                                        <input type="text" class="form-control"
-                                               value="@GetFormAnswer(module.Id)"
-                                               @oninput="@(async (e) => { SetFormAnswer(module.Id, e.Value?.ToString() ?? string.Empty); await SaveFormProgress(); })"
-                                               placeholder="Type your full name as signature"
-                                               required="@module.Required" />
+                                        var canvasId = $"signature-canvas-{module.Id}";
+                                        <div class="signature-container">
+                                            <canvas id="@canvasId"
+                                                    width="500"
+                                                    height="200"
+                                                    class="signature-canvas"
+                                                    style="touch-action: none;"></canvas>
+                                            <button type="button"
+                                                    class="btn btn-sm btn-secondary mt-2"
+                                                    @onclick="@(async () => await ClearSignature(canvasId, module.Id))">
+                                                Clear Signature
+                                            </button>
+                                        </div>
                                         break;
 
                                     case "BMI(in.)":
@@ -445,6 +453,16 @@
                                                 <strong>BMI: @calculatedBmi.ToString("F1")</strong>
                                             </div>
                                         }
+                                        break;
+
+                                    case "Weight":
+                                        weightModuleId = module.Id;
+                                        // Don't render anything - this is handled by BMI(in.) above
+                                        break;
+
+                                    case "BMI":
+                                        bmiResultModuleId = module.Id;
+                                        // Don't render anything - this is calculated
                                         break;
 
                                     default:
@@ -535,7 +553,9 @@
     private string heightFeet = "";
     private string heightInches = "";
     private string weight = "";
-    private string? bmiModuleId;
+    private string? bmiModuleId;  // For BMI(in.) - height field
+    private string? weightModuleId;  // For Weight field
+    private string? bmiResultModuleId;  // For BMI result field
 
     // Mapbox integration
     private ElementReference addressInputRef;
@@ -650,6 +670,17 @@
                 await JSRuntime.InvokeVoidAsync("console.error", $"Failed to initialize Mapbox: {ex.Message}\n{ex.StackTrace}");
             }
         }
+
+        // Initialize signature pads for signature modules on step 6
+        if (!loading && form != null && currentStep == 6)
+        {
+            var signatureModules = form.CustomModules.Where(m => m.ModType == "signature").ToList();
+            foreach (var module in signatureModules)
+            {
+                var canvasId = $"signature-canvas-{module.Id}";
+                await InitializeSignaturePad(canvasId, module.Id);
+            }
+        }
     }
 
     [JSInvokable]
@@ -732,6 +763,9 @@
             errorMessage = "Patient ID is required";
             return;
         }
+
+        // Capture all signatures before submitting
+        await CaptureAllSignatures();
 
         submitting = true;
         errorMessage = null;
@@ -1206,23 +1240,122 @@
 
     private async Task CalculateBMI()
     {
-        if (string.IsNullOrEmpty(heightFeet) || string.IsNullOrEmpty(heightInches) || string.IsNullOrEmpty(weight))
-            return;
+        Console.WriteLine($"[CalculateBMI] heightFeet='{heightFeet}', heightInches='{heightInches}', weight='{weight}'");
 
-        // Calculate BMI
-        var bmi = CalculateBMIValue();
-
-        // Store height in format "5'10""
-        var heightFormatted = $"{heightFeet}'{heightInches}\"";
-
-        // Store the calculated values in form answers
-        // Note: We're storing these in the BMI module's answer field
-        // The API will need to parse this or we might need separate fields
-        if (bmiModuleId != null)
+        // Send height if available
+        if (!string.IsNullOrEmpty(heightFeet) && !string.IsNullOrEmpty(heightInches))
         {
-            var bmiData = $"Height: {heightFormatted}, Weight: {weight} lbs, BMI: {bmi:F1}";
-            SetFormAnswer(bmiModuleId, bmiData);
-            await SaveFormProgress();
+            if (int.TryParse(heightFeet, out int feet) && int.TryParse(heightInches, out int inches))
+            {
+                int totalInches = (feet * 12) + inches;
+                Console.WriteLine($"[CalculateBMI] totalInches='{totalInches}', bmiModuleId='{bmiModuleId}'");
+
+                if (bmiModuleId != null)
+                {
+                    SetFormAnswer(bmiModuleId, totalInches.ToString());
+                }
+            }
+        }
+
+        // Send weight if available
+        if (!string.IsNullOrEmpty(weight) && weightModuleId != null)
+        {
+            Console.WriteLine($"[CalculateBMI] Sending raw weight='{weight}' to weightModuleId='{weightModuleId}'");
+            SetFormAnswer(weightModuleId, weight);
+        }
+
+        await SaveFormProgress();
+    }
+
+    // Track which signature pads have been initialized to prevent reloading signatures during drawing
+    private HashSet<string> initializedSignaturePads = new HashSet<string>();
+
+    // Signature pad methods
+    private async Task InitializeSignaturePad(string canvasId, string moduleId)
+    {
+        await JSRuntime.InvokeVoidAsync("console.log", $"InitializeSignaturePad called for canvasId: {canvasId}, moduleId: {moduleId}");
+
+        try
+        {
+            // Initialize the signature pad
+            var success = await JSRuntime.InvokeAsync<bool>("SignaturePadHelper.initialize", canvasId, moduleId);
+
+            if (success)
+            {
+                await JSRuntime.InvokeVoidAsync("console.log", "Signature pad initialized successfully");
+
+                // Only load existing signature if this pad hasn't been initialized before
+                if (!initializedSignaturePads.Contains(canvasId))
+                {
+                    var existingSignature = GetFormAnswer(moduleId);
+                    if (!string.IsNullOrEmpty(existingSignature))
+                    {
+                        await JSRuntime.InvokeAsync<bool>("SignaturePadHelper.setDataURL", canvasId, existingSignature);
+                    }
+                    initializedSignaturePads.Add(canvasId);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Error initializing signature pad: {ex.Message}");
+        }
+    }
+
+    private async Task ClearSignature(string canvasId, string moduleId)
+    {
+        await JSRuntime.InvokeVoidAsync("console.log", $"ClearSignature called for canvasId: {canvasId}, moduleId: {moduleId}");
+
+        try
+        {
+            // Clear the canvas
+            var success = await JSRuntime.InvokeAsync<bool>("SignaturePadHelper.clear", canvasId);
+
+            if (success)
+            {
+                // Clear the stored answer
+                SetFormAnswer(moduleId, string.Empty);
+                await SaveFormProgress();
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Error clearing signature: {ex.Message}");
+        }
+    }
+
+    private async Task CaptureSignature(string canvasId, string moduleId)
+    {
+        await JSRuntime.InvokeVoidAsync("console.log", $"CaptureSignature called for canvasId: {canvasId}, moduleId: {moduleId}");
+
+        try
+        {
+            // Get the signature data URL
+            var dataURL = await JSRuntime.InvokeAsync<string>("SignaturePadHelper.getDataURL", canvasId);
+
+            if (!string.IsNullOrEmpty(dataURL))
+            {
+                // Store the signature
+                SetFormAnswer(moduleId, dataURL);
+                await SaveFormProgress();
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Error capturing signature: {ex.Message}");
+        }
+    }
+
+    private async Task CaptureAllSignatures()
+    {
+        if (form != null)
+        {
+            var signatureModules = form.CustomModules.Where(m => m.ModType == "signature").ToList();
+            foreach (var module in signatureModules)
+            {
+                var canvasId = $"signature-canvas-{module.Id}";
+                await CaptureSignature(canvasId, module.Id);
+            }
         }
     }
 }

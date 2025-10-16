@@ -172,3 +172,30 @@ h1, h2, h3, h4, h5, h6 {
 .mapboxgl-ctrl-geocoder--icon {
     display: none !important;
 }
+
+/* Signature Canvas */
+.signature-container {
+    margin: 10px 0;
+}
+
+.signature-canvas {
+    border: 2px solid #d1d1d6;
+    border-radius: 8px;
+    display: block;
+    width: 100%;
+    max-width: 500px;
+    height: 200px;
+    cursor: crosshair;
+    background-color: var(--override-white);
+    transition: border-color 0.3s ease;
+}
+
+.signature-canvas:hover {
+    border-color: var(--override-green);
+}
+
+.signature-canvas:focus {
+    border-color: var(--override-green);
+    box-shadow: 0 0 0 0.2rem rgba(28, 183, 131, 0.15);
+    outline: none;
+}
