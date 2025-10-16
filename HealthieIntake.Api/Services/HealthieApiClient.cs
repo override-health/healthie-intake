@@ -65,6 +65,7 @@ public class HealthieApiClient
                             label
                             mod_type
                             required
+                            options
                         }
                     }
                 }
@@ -85,12 +86,28 @@ public class HealthieApiClient
         var customModules = new List<CustomModule>();
         foreach (var module in modules.EnumerateArray())
         {
+            List<string>? options = null;
+            if (module.TryGetProperty("options", out JsonElement optionsProperty) &&
+                optionsProperty.ValueKind == JsonValueKind.Array)
+            {
+                options = new List<string>();
+                foreach (var option in optionsProperty.EnumerateArray())
+                {
+                    var optionStr = option.GetString();
+                    if (optionStr != null)
+                    {
+                        options.Add(optionStr);
+                    }
+                }
+            }
+
             customModules.Add(new CustomModule
             {
                 Id = module.GetProperty("id").GetString() ?? "",
                 Label = module.GetProperty("label").GetString() ?? "",
                 ModType = module.GetProperty("mod_type").GetString() ?? "",
-                Required = module.GetProperty("required").GetBoolean()
+                Required = module.GetProperty("required").GetBoolean(),
+                Options = options
             });
         }
 

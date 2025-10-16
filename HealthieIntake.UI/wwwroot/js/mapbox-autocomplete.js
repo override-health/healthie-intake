@@ -3,6 +3,7 @@
 
 window.MapboxAutocomplete = {
     geocoders: {},
+    wrappers: {},
 
     initialize: function (inputId, accessToken, dotNetHelper, moduleId) {
         console.log('MapboxAutocomplete.initialize called for:', inputId);
@@ -23,9 +24,20 @@ window.MapboxAutocomplete = {
         }
         console.log('Input element found:', input);
 
+        // Check if geocoder already exists for this input
+        if (this.geocoders[inputId]) {
+            console.log('Geocoder already exists for:', inputId);
+            // Update the geocoder with current value if needed
+            const existingValue = input.value;
+            if (existingValue) {
+                this.geocoders[inputId].setInput(existingValue);
+            }
+            return;
+        }
+
         // Create a wrapper div for the geocoder
         const wrapper = document.createElement('div');
-        wrapper.style.width = '100%';
+        wrapper.className = 'mapbox-geocoder-wrapper';
         input.style.display = 'none'; // Hide original input
         input.parentNode.insertBefore(wrapper, input);
 
@@ -42,8 +54,14 @@ window.MapboxAutocomplete = {
         // Add to wrapper
         geocoder.addTo(wrapper);
 
-        // Store reference
+        // Store references
         this.geocoders[inputId] = geocoder;
+        this.wrappers[inputId] = wrapper;
+
+        // Set initial value if exists
+        if (input.value) {
+            geocoder.setInput(input.value);
+        }
 
         // Listen for result selection
         geocoder.on('result', (e) => {
@@ -68,5 +86,29 @@ window.MapboxAutocomplete = {
         });
 
         console.log('Mapbox geocoder initialized for:', inputId);
+    },
+
+    destroy: function (inputId) {
+        console.log('MapboxAutocomplete.destroy called for:', inputId);
+
+        // Remove geocoder instance
+        if (this.geocoders[inputId]) {
+            this.geocoders[inputId].onRemove();
+            delete this.geocoders[inputId];
+        }
+
+        // Remove wrapper from DOM
+        if (this.wrappers[inputId]) {
+            this.wrappers[inputId].remove();
+            delete this.wrappers[inputId];
+        }
+
+        // Show the original input again
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.style.display = '';
+        }
+
+        console.log('Mapbox geocoder destroyed for:', inputId);
     }
 };

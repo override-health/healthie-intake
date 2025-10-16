@@ -38,6 +38,24 @@ public class HealthieController : ControllerBase
         try
         {
             var form = await _healthieClient.GetCustomFormAsync(formId);
+
+            // Post-process: Convert specific questions from 10-point scale to Yes/No
+            if (form.CustomModules != null)
+            {
+                foreach (var module in form.CustomModules)
+                {
+                    if (module.Label != null &&
+                        (module.Label.Contains("Do you have any surgery upcoming") ||
+                         module.Label.Contains("Are you currently taking an opioid medication") ||
+                         module.Label.Contains("Are you currently seeing a therapist or counselor") ||
+                         module.Label.Contains("unhealthy relationship with alcohol, drugs, or prescription medications")))
+                    {
+                        // Change from 10-point scale to Yes/No
+                        module.Options = new List<string> { "Yes", "No" };
+                    }
+                }
+            }
+
             return Ok(form);
         }
         catch (Exception ex)

@@ -35,6 +35,21 @@
     else if (form != null)
     {
         <EditForm Model="@formSubmission" OnValidSubmit="@HandleSubmit">
+            <!-- Progress Bar -->
+            <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <small class="text-muted">Overall Progress</small>
+                    <small class="text-muted">@GetCompletionPercentage()% Complete</small>
+                </div>
+                <div class="progress" style="height: 10px;">
+                    <div class="progress-bar" role="progressbar"
+                         style="width: @GetCompletionPercentage()%;"
+                         aria-valuenow="@GetCompletionPercentage()"
+                         aria-valuemin="0"
+                         aria-valuemax="100"></div>
+                </div>
+            </div>
+
             <!-- Progress Indicator -->
             <div class="alert alert-info mb-3">
                 <strong>Step @currentStep of @totalSteps:</strong> @GetSectionTitle()
@@ -58,10 +73,26 @@
                 <div class="card-body">
                     <h5 class="card-title">@GetSectionTitle()</h5>
 
+                    @if (currentStep == 6)
+                    {
+                        <div class="alert alert-info mb-4" role="contentinfo">
+                            <p>By signing this form you agree to the following:</p>
+                            <p><a href="https://www.override.health/healthie-privacy-policy" target="_blank" rel="noopener">Notice of Privacy Policy</a></p>
+                            <p><a href="https://www.override.health/informed-treatment-consent" target="_blank" rel="noopener">Informed Treatment Consent</a></p>
+                            <p><a href="https://www.override.health/clinical-policies-procedures" target="_blank" rel="noopener">Clinical Policies & Procedures</a></p>
+                        </div>
+                    }
+
                     @foreach (var module in GetModulesForCurrentStep())
                     {
+                        @* Skip Patient Agreement header on step 5 *@
+                        @if (currentStep == 5 && module.Label != null && module.Label.Contains("Patient Agreement", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
                         <div class="mb-3">
-                            @if (module.ModType == "label" || module.ModType == "read_only")
+                            @if (module.ModType == "label" || module.ModType == "read_only" || module.ModType == "staticText")
                             {
                                 <div class="alert alert-info">
                                     @((MarkupString)module.Label)
@@ -81,45 +112,40 @@
                                 {
                                     case "text":
                                         <input type="text" class="form-control"
-                                               @bind="formAnswers[module.Id]"
-                                               @bind:event="oninput"
-                                               @bind:after="SaveFormProgress"
+                                               value="@GetFormAnswer(module.Id)"
+                                               @oninput="@(async (e) => { SetFormAnswer(module.Id, e.Value?.ToString() ?? string.Empty); await SaveFormProgress(); })"
                                                required="@module.Required" />
                                         break;
 
                                     case "textarea":
                                         <textarea class="form-control" rows="3"
-                                                  @bind="formAnswers[module.Id]"
-                                                  @bind:event="oninput"
-                                                  @bind:after="SaveFormProgress"
+                                                  value="@GetFormAnswer(module.Id)"
+                                                  @oninput="@(async (e) => { SetFormAnswer(module.Id, e.Value?.ToString() ?? string.Empty); await SaveFormProgress(); })"
                                                   required="@module.Required"></textarea>
                                         break;
 
                                     case "date":
-                                        <div class="row g-2">
+                                        <div class="row g-2" style="max-width: 50%;">
                                             <div class="col-4">
                                                 <input type="text" class="form-control"
-                                                       @bind="dateMonths[module.Id]"
-                                                       @bind:event="oninput"
-                                                       @bind:after="SaveFormProgress"
+                                                       value="@GetDateMonth(module.Id)"
+                                                       @oninput="@(async (e) => { SetDateMonth(module.Id, e.Value?.ToString() ?? string.Empty); await SaveFormProgress(); })"
                                                        placeholder="MM"
                                                        maxlength="2"
                                                        required="@module.Required" />
                                             </div>
                                             <div class="col-4">
                                                 <input type="text" class="form-control"
-                                                       @bind="dateDays[module.Id]"
-                                                       @bind:event="oninput"
-                                                       @bind:after="SaveFormProgress"
+                                                       value="@GetDateDay(module.Id)"
+                                                       @oninput="@(async (e) => { SetDateDay(module.Id, e.Value?.ToString() ?? string.Empty); await SaveFormProgress(); })"
                                                        placeholder="DD"
                                                        maxlength="2"
                                                        required="@module.Required" />
                                             </div>
                                             <div class="col-4">
                                                 <input type="text" class="form-control"
-                                                       @bind="dateYears[module.Id]"
-                                                       @bind:event="oninput"
-                                                       @bind:after="SaveFormProgress"
+                                                       value="@GetDateYear(module.Id)"
+                                                       @oninput="@(async (e) => { SetDateYear(module.Id, e.Value?.ToString() ?? string.Empty); await SaveFormProgress(); })"
                                                        placeholder="YYYY"
                                                        maxlength="4"
                                                        required="@module.Required" />
@@ -141,7 +167,7 @@
                                                            id="@($"{module.Id}_{option}")"
                                                            value="@option"
                                                            checked="@(formAnswers.GetValueOrDefault(module.Id) == option)"
-                                                           @onchange="@(async () => { formAnswers[module.Id] = option; await SaveFormProgress(); })"
+                                                           @onchange="@(async () => { SetFormAnswer(module.Id, option); await SaveFormProgress(); })"
                                                            required="@module.Required" />
                                                     <label class="form-check-label" for="@($"{module.Id}_{option}")">
                                                         @option
@@ -160,7 +186,25 @@
                                                            id="@($"{module.Id}_{option}")"
                                                            value="@option"
                                                            checked="@(formAnswers.GetValueOrDefault(module.Id) == option)"
-                                                           @onchange="@(async () => { formAnswers[module.Id] = option; await SaveFormProgress(); })"
+                                                           @onchange="@(async () => { SetFormAnswer(module.Id, option); await SaveFormProgress(); })"
+                                                           required="@module.Required" />
+                                                    <label class="form-check-label" for="@($"{module.Id}_{option}")">
+                                                        @option
+                                                    </label>
+                                                </div>
+                                            }
+                                        }
+                                        else if (module.Options != null && module.Options.Any())
+                                        {
+                                            foreach (var option in module.Options)
+                                            {
+                                                <div class="form-check form-check-inline">
+                                                    <input class="form-check-input" type="radio"
+                                                           name="@module.Id"
+                                                           id="@($"{module.Id}_{option}")"
+                                                           value="@option"
+                                                           checked="@(formAnswers.GetValueOrDefault(module.Id) == option)"
+                                                           @onchange="@(async () => { SetFormAnswer(module.Id, option); await SaveFormProgress(); })"
                                                            required="@module.Required" />
                                                     <label class="form-check-label" for="@($"{module.Id}_{option}")">
                                                         @option
@@ -188,7 +232,7 @@
                                                                id="@($"{module.Id}_{i}")"
                                                                value="@value"
                                                                checked="@(formAnswers.GetValueOrDefault(module.Id) == value)"
-                                                               @onchange="@(async () => { formAnswers[module.Id] = value; await SaveFormProgress(); })"
+                                                               @onchange="@(async () => { SetFormAnswer(module.Id, value); await SaveFormProgress(); })"
                                                                required="@module.Required" />
                                                         <label class="form-check-label" for="@($"{module.Id}_{i}")">
                                                             @i
@@ -220,12 +264,127 @@
                                                 }
                                             </div>
                                         }
+                                        else if (module.Label != null && module.Label.Contains("following procedures"))
+                                        {
+                                            var procedureOptions = new[] {
+                                                "Epidural steroid injection",
+                                                "Facet joint/medial branch nerve block",
+                                                "Radiofrequency Ablation (RFA):",
+                                                "Joint injection",
+                                                "Trigger point injection",
+                                                "Spinal cord stimulation",
+                                                "None of the above",
+                                                "Other"
+                                            };
+                                            <div class="mt-2">
+                                                @foreach (var option in procedureOptions)
+                                                {
+                                                    var optionValue = option;
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox"
+                                                               id="@($"{module.Id}_{optionValue}")"
+                                                               checked="@(checkboxSelections.GetValueOrDefault(module.Id)?.Contains(optionValue) ?? false)"
+                                                               @onchange="@((ChangeEventArgs e) => HandleCheckboxChange(module.Id, optionValue, (bool)e.Value!))" />
+                                                        <label class="form-check-label" for="@($"{module.Id}_{optionValue}")">
+                                                            @optionValue
+                                                        </label>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        else if (module.Label != null && module.Label.Contains("tried any of the following"))
+                                        {
+                                            var therapyOptions = new[] {
+                                                "Physical therapy",
+                                                "Chiropractic care",
+                                                "Massage therapy",
+                                                "Heat or ice pool therapy",
+                                                "TENS unit",
+                                                "Brace / orthotic",
+                                                "Acupuncture",
+                                                "Biofeedback",
+                                                "Interdisciplinary pain education classes",
+                                                "None of the above",
+                                                "Other"
+                                            };
+                                            <div class="mt-2">
+                                                @foreach (var option in therapyOptions)
+                                                {
+                                                    var optionValue = option;
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox"
+                                                               id="@($"{module.Id}_{optionValue}")"
+                                                               checked="@(checkboxSelections.GetValueOrDefault(module.Id)?.Contains(optionValue) ?? false)"
+                                                               @onchange="@((ChangeEventArgs e) => HandleCheckboxChange(module.Id, optionValue, (bool)e.Value!))" />
+                                                        <label class="form-check-label" for="@($"{module.Id}_{optionValue}")">
+                                                            @optionValue
+                                                        </label>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        else if (module.Label != null && module.Label.Contains("run in your family"))
+                                        {
+                                            var familyOptions = new[] {
+                                                "Similar pain",
+                                                "Arthritis",
+                                                "Bleeding Disorder",
+                                                "Cancer",
+                                                "Depression",
+                                                "Substance abuse",
+                                                "Other psychological history",
+                                                "Other trauma condition",
+                                                "None of the above",
+                                                "Other"
+                                            };
+                                            <div class="mt-2">
+                                                @foreach (var option in familyOptions)
+                                                {
+                                                    var optionValue = option;
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox"
+                                                               id="@($"{module.Id}_{optionValue}")"
+                                                               checked="@(checkboxSelections.GetValueOrDefault(module.Id)?.Contains(optionValue) ?? false)"
+                                                               @onchange="@((ChangeEventArgs e) => HandleCheckboxChange(module.Id, optionValue, (bool)e.Value!))" />
+                                                        <label class="form-check-label" for="@($"{module.Id}_{optionValue}")">
+                                                            @optionValue
+                                                        </label>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        else if (module.Label != null && module.Label.Contains("use any of the following"))
+                                        {
+                                            var substanceOptions = new[] {
+                                                "Alcohol",
+                                                "Tobacco",
+                                                "Cannabis",
+                                                "Illicit drugs (street drugs) ",
+                                                "Prescription drugs not prescribed to you",
+                                                "None of the above",
+                                                "Other"
+                                            };
+                                            <div class="mt-2">
+                                                @foreach (var option in substanceOptions)
+                                                {
+                                                    var optionValue = option;
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox"
+                                                               id="@($"{module.Id}_{optionValue}")"
+                                                               checked="@(checkboxSelections.GetValueOrDefault(module.Id)?.Contains(optionValue) ?? false)"
+                                                               @onchange="@((ChangeEventArgs e) => HandleCheckboxChange(module.Id, optionValue, (bool)e.Value!))" />
+                                                        <label class="form-check-label" for="@($"{module.Id}_{optionValue}")">
+                                                            @optionValue
+                                                        </label>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
                                         else
                                         {
                                             <input type="text" class="form-control"
-                                                   @bind="formAnswers[module.Id]"
-                                                   @bind:event="oninput"
-                                                   @bind:after="SaveFormProgress"
+                                                   value="@GetFormAnswer(module.Id)"
+                                                   @oninput="@(async (e) => { SetFormAnswer(module.Id, e.Value?.ToString() ?? string.Empty); await SaveFormProgress(); })"
                                                    placeholder="Enter comma-separated values"
                                                    required="@module.Required" />
                                             <div class="form-text">Enter multiple selections separated by commas</div>
@@ -235,9 +394,8 @@
                                     case "location":
                                         <input type="text" class="form-control"
                                                id="@($"address-{module.Id}")"
-                                               @bind="formAnswers[module.Id]"
-                                               @bind:event="oninput"
-                                               @bind:after="SaveFormProgress"
+                                               value="@GetFormAnswer(module.Id)"
+                                               @oninput="@(async (e) => { SetFormAnswer(module.Id, e.Value?.ToString() ?? string.Empty); await SaveFormProgress(); })"
                                                placeholder="Start typing your address..."
                                                autocomplete="off"
                                                required="@module.Required"
@@ -246,27 +404,53 @@
 
                                     case "signature":
                                         <input type="text" class="form-control"
-                                               @bind="formAnswers[module.Id]"
-                                               @bind:event="oninput"
-                                               @bind:after="SaveFormProgress"
+                                               value="@GetFormAnswer(module.Id)"
+                                               @oninput="@(async (e) => { SetFormAnswer(module.Id, e.Value?.ToString() ?? string.Empty); await SaveFormProgress(); })"
                                                placeholder="Type your full name as signature"
                                                required="@module.Required" />
                                         break;
 
                                     case "BMI(in.)":
-                                        <input type="text" class="form-control"
-                                               @bind="formAnswers[module.Id]"
-                                               @bind:event="oninput"
-                                               @bind:after="SaveFormProgress"
-                                               placeholder="e.g., 5 feet 10 inches, 180 lbs"
-                                               required="@module.Required" />
+                                        bmiModuleId = module.Id;
+                                        <div class="row g-2">
+                                            <div class="col-md-4">
+                                                <label class="form-label">Height (Feet)</label>
+                                                <select class="form-select" @bind="heightFeet" @bind:after="@(async () => await CalculateBMI())" style="height: 38px;">
+                                                    <option value="">Select</option>
+                                                    @for (int i = 3; i <= 8; i++)
+                                                    {
+                                                        <option value="@i">@i ft</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">Height (Inches)</label>
+                                                <select class="form-select" @bind="heightInches" @bind:after="@(async () => await CalculateBMI())" style="height: 38px;">
+                                                    <option value="">Select</option>
+                                                    @for (int i = 0; i <= 11; i++)
+                                                    {
+                                                        <option value="@i">@i in</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">Weight (lbs)</label>
+                                                <input type="number" class="form-control" @bind="weight" @bind:after="@(async () => await CalculateBMI())" placeholder="lbs" style="height: 38px;" />
+                                            </div>
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(heightFeet) && !string.IsNullOrEmpty(heightInches) && !string.IsNullOrEmpty(weight))
+                                        {
+                                            var calculatedBmi = CalculateBMIValue();
+                                            <div class="mt-2">
+                                                <strong>BMI: @calculatedBmi.ToString("F1")</strong>
+                                            </div>
+                                        }
                                         break;
 
                                     default:
                                         <input type="text" class="form-control"
-                                               @bind="formAnswers[module.Id]"
-                                               @bind:event="oninput"
-                                               @bind:after="SaveFormProgress"
+                                               value="@GetFormAnswer(module.Id)"
+                                               @oninput="@(async (e) => { SetFormAnswer(module.Id, e.Value?.ToString() ?? string.Empty); await SaveFormProgress(); })"
                                                required="@module.Required" />
                                         break;
                                 }
@@ -286,7 +470,10 @@
                         </button>
                     }
                 </div>
-                <div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-danger" @onclick="ClearAndStartOver">
+                        Clear & Start Over
+                    </button>
                     <button type="button" class="btn btn-outline-primary" @onclick="SaveAndExit">
                         Save & Exit
                     </button>
@@ -344,14 +531,21 @@
     // Checkbox fields - track multiple selections
     private Dictionary<string, HashSet<string>> checkboxSelections = new();
 
+    // BMI calculator fields
+    private string heightFeet = "";
+    private string heightInches = "";
+    private string weight = "";
+    private string? bmiModuleId;
+
     // Mapbox integration
     private ElementReference addressInputRef;
     private DotNetObjectReference<IntakeForm>? dotNetHelper;
     private string? addressModuleId;
+    private bool mapboxInitialized = false;
 
     // Multi-step navigation
     private int currentStep = 1;
-    private const int totalSteps = 5;
+    private const int totalSteps = 6;
 
     protected override async Task OnInitializedAsync()
     {
@@ -377,13 +571,18 @@
                         dateDays[module.Id] = string.Empty;
                         dateYears[module.Id] = string.Empty;
                     }
-                    else if (module.ModType == "checkbox" && module.Label.Equals("Relationship status", StringComparison.OrdinalIgnoreCase))
+                    else if (module.ModType == "checkbox" &&
+                            (module.Label.Equals("Relationship status", StringComparison.OrdinalIgnoreCase) ||
+                             (module.Label != null && module.Label.Contains("following procedures")) ||
+                             (module.Label != null && module.Label.Contains("tried any of the following")) ||
+                             (module.Label != null && module.Label.Contains("run in your family")) ||
+                             (module.Label != null && module.Label.Contains("use any of the following"))))
                     {
                         checkboxSelections[module.Id] = new HashSet<string>();
                     }
                     else
                     {
-                        formAnswers[module.Id] = string.Empty;
+                        SetFormAnswer(module.Id, string.Empty);
                     }
                 }
 
@@ -410,17 +609,20 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await JSRuntime.InvokeVoidAsync("console.log", $"OnAfterRenderAsync called. firstRender={firstRender}, addressModuleId={addressModuleId}, loading={loading}");
+        await JSRuntime.InvokeVoidAsync("console.log", $"OnAfterRenderAsync called. firstRender={firstRender}, addressModuleId={addressModuleId}, loading={loading}, mapboxInitialized={mapboxInitialized}");
 
-        // Wait until data is loaded, we have the addressModuleId, and we're on step 2
-        if (!loading && addressModuleId != null && currentStep == 2 && dotNetHelper == null)
+        // Wait until data is loaded, we have the addressModuleId, we're on step 2, and haven't initialized yet
+        if (!loading && addressModuleId != null && currentStep == 2 && !mapboxInitialized)
         {
             try
             {
                 await JSRuntime.InvokeVoidAsync("console.log", "About to initialize Mapbox...");
 
-                // Create the .NET object reference for JavaScript callbacks
-                dotNetHelper = DotNetObjectReference.Create(this);
+                // Create the .NET object reference for JavaScript callbacks if not already created
+                if (dotNetHelper == null)
+                {
+                    dotNetHelper = DotNetObjectReference.Create(this);
+                }
 
                 // Get Mapbox access token from configuration
                 var mapboxToken = Configuration["MapboxAccessToken"] ?? "";
@@ -429,12 +631,14 @@
 
                 if (!string.IsNullOrEmpty(mapboxToken))
                 {
-                    // Initialize Mapbox autocomplete
+                    // Initialize Mapbox autocomplete (will reuse existing if already initialized)
                     await JSRuntime.InvokeVoidAsync("MapboxAutocomplete.initialize",
                         $"address-{addressModuleId}",
                         mapboxToken,
                         dotNetHelper,
                         addressModuleId);
+
+                    mapboxInitialized = true;
                 }
                 else
                 {
@@ -462,6 +666,63 @@
     public void Dispose()
     {
         dotNetHelper?.Dispose();
+    }
+
+    // Safe dictionary access helpers
+    private string GetFormAnswer(string moduleId)
+    {
+        if (!formAnswers.ContainsKey(moduleId))
+        {
+            formAnswers[moduleId] = string.Empty;
+        }
+        return formAnswers[moduleId];
+    }
+
+    private void SetFormAnswer(string moduleId, string value)
+    {
+        formAnswers[moduleId] = value;
+    }
+
+    private string GetDateMonth(string moduleId)
+    {
+        if (!dateMonths.ContainsKey(moduleId))
+        {
+            dateMonths[moduleId] = string.Empty;
+        }
+        return dateMonths[moduleId];
+    }
+
+    private void SetDateMonth(string moduleId, string value)
+    {
+        dateMonths[moduleId] = value;
+    }
+
+    private string GetDateDay(string moduleId)
+    {
+        if (!dateDays.ContainsKey(moduleId))
+        {
+            dateDays[moduleId] = string.Empty;
+        }
+        return dateDays[moduleId];
+    }
+
+    private void SetDateDay(string moduleId, string value)
+    {
+        dateDays[moduleId] = value;
+    }
+
+    private string GetDateYear(string moduleId)
+    {
+        if (!dateYears.ContainsKey(moduleId))
+        {
+            dateYears[moduleId] = string.Empty;
+        }
+        return dateYears[moduleId];
+    }
+
+    private void SetDateYear(string moduleId, string value)
+    {
+        dateYears[moduleId] = value;
     }
 
     private async Task HandleSubmit()
@@ -544,13 +805,18 @@
                         dateDays[module.Id] = string.Empty;
                         dateYears[module.Id] = string.Empty;
                     }
-                    else if (module.ModType == "checkbox" && module.Label.Equals("Relationship status", StringComparison.OrdinalIgnoreCase))
+                    else if (module.ModType == "checkbox" &&
+                            (module.Label.Equals("Relationship status", StringComparison.OrdinalIgnoreCase) ||
+                             (module.Label != null && module.Label.Contains("following procedures")) ||
+                             (module.Label != null && module.Label.Contains("tried any of the following")) ||
+                             (module.Label != null && module.Label.Contains("run in your family")) ||
+                             (module.Label != null && module.Label.Contains("use any of the following"))))
                     {
                         checkboxSelections[module.Id] = new HashSet<string>();
                     }
                     else
                     {
-                        formAnswers[module.Id] = string.Empty;
+                        SetFormAnswer(module.Id, string.Empty);
                     }
                 }
             }
@@ -746,7 +1012,7 @@
             // Section 2: Date of birth → Primary care physician
             2 => allModules.Where(m =>
                 m.Label.Contains("Date of birth") ||
-                m.Label == "Address" ||
+                m.ModType == "location" ||
                 m.Label == "Sex" ||
                 m.Label == "BMI" ||
                 m.Label.Contains("Referring physician") ||
@@ -754,18 +1020,31 @@
 
             // Section 3: Relationship status → Emergency contact
             3 => allModules.Where(m =>
+                m.ModType != "location" && (
                 m.Label.Contains("Relationship status") ||
                 m.Label.Contains("Employment status") ||
                 m.Label.Contains("Occupation") ||
-                m.Label.Contains("Emergency contact")).ToList(),
+                m.Label.Contains("Emergency contact"))).ToList(),
 
             // Section 4: Pain Assessment section
             4 => allModules.SkipWhile(m => m.Label != "PAIN ASSESSMENT")
                           .TakeWhile(m => m.Label != "MEDICAL HISTORY")
+                          .Where(m => m.ModType != "location")
                           .ToList(),
 
-            // Section 5: Medical History section
-            5 => allModules.SkipWhile(m => m.Label != "MEDICAL HISTORY").ToList(),
+            // Section 5: Medical History section (without Patient Agreement)
+            5 => allModules.SkipWhile(m => m.Label != "MEDICAL HISTORY")
+                          .TakeWhile(m => !m.Label.Contains("Patient Agreement", StringComparison.OrdinalIgnoreCase) && m.ModType != "signature")
+                          .Where(m => m.ModType != "location" &&
+                                     !(m.Label != null && m.Label.Contains("Patient Agreement", StringComparison.OrdinalIgnoreCase)))
+                          .ToList(),
+
+            // Section 6: Patient Agreement and Signature only
+            6 => allModules.Where(m =>
+                m.Label == "PATIENT AGREEMENT" ||
+                m.ModType == "signature" ||
+                (m.Label != null && m.Label.Contains("PATIENT AGREEMENT")))
+                          .ToList(),
 
             _ => new List<CustomModule>()
         };
@@ -780,8 +1059,64 @@
             3 => "Demographics & Emergency Contact",
             4 => "Pain Assessment",
             5 => "Medical History",
+            6 => "Patient Agreement",
             _ => "Patient Intake Form"
         };
+    }
+
+    private int GetCompletionPercentage()
+    {
+        if (form == null || form.CustomModules == null) return 0;
+
+        // Count total required fields (excluding labels and read-only fields)
+        var totalFields = form.CustomModules
+            .Count(m => m.ModType != "label" && m.ModType != "read_only");
+
+        if (totalFields == 0) return 0;
+
+        // Count completed fields (fields with non-empty values)
+        var completedFields = 0;
+
+        foreach (var module in form.CustomModules)
+        {
+            if (module.ModType == "label" || module.ModType == "read_only") continue;
+
+            if (module.ModType == "date")
+            {
+                // Date is complete if all three parts are filled
+                if (!string.IsNullOrWhiteSpace(dateMonths.GetValueOrDefault(module.Id)) &&
+                    !string.IsNullOrWhiteSpace(dateDays.GetValueOrDefault(module.Id)) &&
+                    !string.IsNullOrWhiteSpace(dateYears.GetValueOrDefault(module.Id)))
+                {
+                    completedFields++;
+                }
+            }
+            else if (module.ModType == "checkbox")
+            {
+                // Checkbox is complete if at least one option is selected
+                if (checkboxSelections.GetValueOrDefault(module.Id)?.Count > 0)
+                {
+                    completedFields++;
+                }
+            }
+            else
+            {
+                // Other fields are complete if they have a non-empty value
+                if (!string.IsNullOrWhiteSpace(formAnswers.GetValueOrDefault(module.Id)))
+                {
+                    completedFields++;
+                }
+            }
+        }
+
+        // Add patient ID to the count
+        if (!string.IsNullOrWhiteSpace(patientId))
+        {
+            completedFields++;
+        }
+        totalFields++; // Add 1 for patient ID field
+
+        return (int)Math.Round((double)completedFields / totalFields * 100);
     }
 
     private async Task NextStep()
@@ -789,6 +1124,14 @@
         if (currentStep < totalSteps)
         {
             await SaveFormProgress();
+
+            // Destroy Mapbox geocoder when leaving step 2
+            if (currentStep == 2 && addressModuleId != null)
+            {
+                await JSRuntime.InvokeVoidAsync("MapboxAutocomplete.destroy", $"address-{addressModuleId}");
+                mapboxInitialized = false;
+            }
+
             currentStep++;
             StateHasChanged();
         }
@@ -799,6 +1142,14 @@
         if (currentStep > 1)
         {
             await SaveFormProgress();
+
+            // Destroy Mapbox geocoder when leaving step 2
+            if (currentStep == 2 && addressModuleId != null)
+            {
+                await JSRuntime.InvokeVoidAsync("MapboxAutocomplete.destroy", $"address-{addressModuleId}");
+                mapboxInitialized = false;
+            }
+
             currentStep--;
             StateHasChanged();
         }
@@ -809,5 +1160,69 @@
         await SaveFormProgress();
         // Could navigate away or show a message
         successMessage = "Progress saved! You can return to complete the form later.";
+    }
+
+    private async Task ClearAndStartOver()
+    {
+        // Clear localStorage
+        await JSRuntime.InvokeVoidAsync("localStorage.removeItem", GetStorageKey());
+
+        // Reset all form data
+        patientId = string.Empty;
+        formAnswers.Clear();
+        dateMonths.Clear();
+        dateDays.Clear();
+        dateYears.Clear();
+        checkboxSelections.Clear();
+
+        // Reset Mapbox initialization flag
+        mapboxInitialized = false;
+
+        // Reset to step 1
+        currentStep = 1;
+
+        // Clear any messages
+        successMessage = null;
+        errorMessage = null;
+
+        // Trigger re-render
+        StateHasChanged();
+    }
+
+    private double CalculateBMIValue()
+    {
+        if (string.IsNullOrEmpty(heightFeet) || string.IsNullOrEmpty(heightInches) || string.IsNullOrEmpty(weight))
+            return 0;
+
+        if (!int.TryParse(heightFeet, out int feet) || !int.TryParse(heightInches, out int inches) || !double.TryParse(weight, out double weightLbs))
+            return 0;
+
+        int totalInches = (feet * 12) + inches;
+        if (totalInches == 0) return 0;
+
+        // BMI = (weight in lbs / (height in inches)^2) * 703
+        return (weightLbs / (totalInches * totalInches)) * 703;
+    }
+
+    private async Task CalculateBMI()
+    {
+        if (string.IsNullOrEmpty(heightFeet) || string.IsNullOrEmpty(heightInches) || string.IsNullOrEmpty(weight))
+            return;
+
+        // Calculate BMI
+        var bmi = CalculateBMIValue();
+
+        // Store height in format "5'10""
+        var heightFormatted = $"{heightFeet}'{heightInches}\"";
+
+        // Store the calculated values in form answers
+        // Note: We're storing these in the BMI module's answer field
+        // The API will need to parse this or we might need separate fields
+        if (bmiModuleId != null)
+        {
+            var bmiData = $"Height: {heightFormatted}, Weight: {weight} lbs, BMI: {bmi:F1}";
+            SetFormAnswer(bmiModuleId, bmiData);
+            await SaveFormProgress();
+        }
     }
 }

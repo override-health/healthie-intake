@@ -6,4 +6,5 @@ public class CustomModule
     public string Label { get; set; } = string.Empty;
     public string ModType { get; set; } = string.Empty;
     public bool Required { get; set; }
+    public List<string>? Options { get; set; }
 }
