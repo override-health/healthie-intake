@@ -33,6 +33,18 @@ const IntakeForm = () => {
   // Mapbox integration
   const [addressModuleId, setAddressModuleId] = useState(null);
 
+  // Primary Language field (custom field)
+  const [primaryLanguage, setPrimaryLanguage] = useState('');
+  const [primaryLanguageOther, setPrimaryLanguageOther] = useState('');
+
+  // Primary care provider phone (custom field)
+  const [primaryCareProviderPhone, setPrimaryCareProviderPhone] = useState('');
+
+  // Emergency contact fields (custom fields replacing textarea)
+  const [emergencyContactName, setEmergencyContactName] = useState('');
+  const [emergencyContactRelationship, setEmergencyContactRelationship] = useState('');
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
+
   // Multi-step navigation
   const [currentStep, setCurrentStep] = useState(1);
   const totalSteps = 6;
@@ -57,7 +69,7 @@ const IntakeForm = () => {
     if (form) {
       saveFormProgress();
     }
-  }, [formAnswers, dateMonths, dateDays, dateYears, checkboxSelections, currentStep]);
+  }, [formAnswers, dateMonths, dateDays, dateYears, checkboxSelections, currentStep, primaryLanguage, primaryLanguageOther, primaryCareProviderPhone, emergencyContactName, emergencyContactRelationship, emergencyContactPhone]);
 
   // Calculate BMI when height or weight changes
   useEffect(() => {
@@ -153,7 +165,13 @@ const IntakeForm = () => {
         ),
         heightFeet,
         heightInches,
-        weight
+        weight,
+        primaryLanguage,
+        primaryLanguageOther,
+        primaryCareProviderPhone,
+        emergencyContactName,
+        emergencyContactRelationship,
+        emergencyContactPhone
       };
       localStorage.setItem(getStorageKey(), JSON.stringify(progress));
     } catch (error) {
@@ -182,6 +200,12 @@ const IntakeForm = () => {
         if (progress.heightFeet) setHeightFeet(progress.heightFeet);
         if (progress.heightInches) setHeightInches(progress.heightInches);
         if (progress.weight) setWeight(progress.weight);
+        if (progress.primaryLanguage) setPrimaryLanguage(progress.primaryLanguage);
+        if (progress.primaryLanguageOther) setPrimaryLanguageOther(progress.primaryLanguageOther);
+        if (progress.primaryCareProviderPhone) setPrimaryCareProviderPhone(progress.primaryCareProviderPhone);
+        if (progress.emergencyContactName) setEmergencyContactName(progress.emergencyContactName);
+        if (progress.emergencyContactRelationship) setEmergencyContactRelationship(progress.emergencyContactRelationship);
+        if (progress.emergencyContactPhone) setEmergencyContactPhone(progress.emergencyContactPhone);
       }
     } catch (error) {
       console.log('Failed to load progress:', error.message);
@@ -274,7 +298,6 @@ const IntakeForm = () => {
           m.modType === 'location' ||
           m.label === 'Sex' ||
           m.label === 'BMI' ||
-          m.label?.includes('Referring physician') ||
           m.label?.includes('Primary care physician')
         );
 
@@ -301,11 +324,32 @@ const IntakeForm = () => {
         // Step 5: Medical History (EXCLUDE location and Patient Agreement)
         const medHistStart = allModules.findIndex(m => m.label === 'MEDICAL HISTORY');
         if (medHistStart === -1) return [];
-        return allModules.slice(medHistStart).filter(m =>
-          m.modType !== 'location' &&
-          m.modType !== 'signature' &&
-          !(m.label?.toLowerCase().includes('patient agreement'))
-        );
+        return allModules.slice(medHistStart).filter(m => {
+          // Exclude location, signature, and patient agreement
+          if (m.modType === 'location') return false;
+          if (m.modType === 'signature') return false;
+          if (m.label?.toLowerCase().includes('patient agreement')) return false;
+
+          // PHASE 1 CHANGES: Remove specific fields
+          // Remove "Anything else providers" field (ID: 19056499)
+          if (m.label?.toLowerCase().includes('anything more you would like your override providers to know')) return false;
+          // Remove "If other therapy" comment field (ID: 19056490)
+          if (m.label?.toLowerCase().includes('if other') && m.label?.toLowerCase().includes('comment')) return false;
+
+          // PHASE 1: Conditional logic for "Other procedures" field (ID: 19056485)
+          // Only show if "Other" was selected in procedures checkbox
+          if (m.label?.toLowerCase().includes('if other, list them here')) {
+            const proceduresModule = allModules.find(mod =>
+              mod.label?.toLowerCase().includes('have you had any of the following procedures')
+            );
+            if (proceduresModule && checkboxSelections[proceduresModule.id]) {
+              return checkboxSelections[proceduresModule.id].has('Other');
+            }
+            return false;
+          }
+
+          return true;
+        });
 
       case 6:
         // Step 6: Patient Agreement and Signature only
@@ -323,7 +367,7 @@ const IntakeForm = () => {
   const getSectionTitle = () => {
     switch (currentStep) {
       case 1: return 'Welcome';
-      case 2: return 'Personal Information';
+      case 2: return 'Patient Demographics';
       case 3: return 'Demographics & Emergency Contact';
       case 4: return 'Pain Assessment';
       case 5: return 'Medical History';
@@ -364,8 +408,106 @@ const IntakeForm = () => {
     return Math.round((completedFields / totalFields) * 100);
   };
 
+  const validateCurrentStep = () => {
+    const modulesForStep = getModulesForCurrentStep();
+    const missingFields = [];
+
+    // Check patient ID on step 1
+    if (currentStep === 1 && !patientId) {
+      missingFields.push('Patient Healthie ID');
+    }
+
+    // Check Primary Language on step 2
+    if (currentStep === 2) {
+      if (!primaryLanguage) {
+        missingFields.push('Primary Language');
+      } else if (primaryLanguage === 'Other' && !primaryLanguageOther.trim()) {
+        missingFields.push('Specify your primary language');
+      }
+
+      // Validate phone number format if provided (optional field)
+      if (primaryCareProviderPhone.trim()) {
+        const phoneRegex = /^[\d\s\-\(\)\+\.]+$/;
+        const digitsOnly = primaryCareProviderPhone.replace(/\D/g, '');
+
+        if (!phoneRegex.test(primaryCareProviderPhone) || digitsOnly.length < 10) {
+          missingFields.push('Primary care provider phone number (invalid format - example: (123)123-1234)');
+        }
+      }
+    }
+
+    // Check Emergency Contact Phone on step 3 (if provided)
+    if (currentStep === 3) {
+      if (emergencyContactPhone.trim()) {
+        const phoneRegex = /^[\d\s\-\(\)\+\.]+$/;
+        const digitsOnly = emergencyContactPhone.replace(/\D/g, '');
+
+        if (!phoneRegex.test(emergencyContactPhone) || digitsOnly.length < 10) {
+          missingFields.push('Emergency contact phone number (invalid format - example: (123)123-1234)');
+        }
+      }
+    }
+
+    // Check all required fields for current step
+    modulesForStep.forEach(module => {
+      // Skip non-input fields
+      if (module.modType === 'label' || module.modType === 'read_only' || module.modType === 'staticText') return;
+
+      // Use the same logic as visual indicator
+      if (!isFieldRequired(module)) return;
+
+      // Check different field types
+      if (module.modType === 'date') {
+        if (!dateMonths[module.id] || !dateDays[module.id] || !dateYears[module.id]) {
+          missingFields.push(module.label || 'Date field');
+        }
+      } else if (module.modType === 'checkbox') {
+        if (!checkboxSelections[module.id] || checkboxSelections[module.id].size === 0) {
+          missingFields.push(module.label || 'Checkbox field');
+        }
+      } else if (module.modType === 'signature') {
+        const ref = signaturePadRefs.current[module.id];
+        if (!ref || !ref.getDataURL || !ref.getDataURL()) {
+          missingFields.push(module.label || 'Signature');
+        }
+      } else if (module.modType === 'BMI(in.)' || module.modType === 'Weight' || module.modType === 'BMI') {
+        // BMI fields - check if height and weight are filled
+        if (module.modType === 'BMI(in.)') {
+          if (!heightFeet || !heightInches) {
+            missingFields.push('Height');
+          }
+          if (!weight) {
+            missingFields.push('Weight');
+          }
+        }
+      } else {
+        // Text, textarea, radio, location, etc.
+        if (!formAnswers[module.id] || formAnswers[module.id].trim() === '') {
+          missingFields.push(module.label || 'Field');
+        }
+      }
+    });
+
+    return {
+      isValid: missingFields.length === 0,
+      missingFields
+    };
+  };
+
   const nextStep = (e) => {
     if (e) e.preventDefault();
+
+    // Validate current step before progressing
+    const validation = validateCurrentStep();
+    if (!validation.isValid) {
+      setErrorMessage(`Please complete the following required fields: ${validation.missingFields.join(', ')}`);
+      window.scrollTo(0, 0);
+      return;
+    }
+
+    // Clear error message on successful validation
+    setErrorMessage(null);
+
     if (currentStep < totalSteps) {
       setCurrentStep(currentStep + 1);
       window.scrollTo(0, 0);
@@ -374,6 +516,8 @@ const IntakeForm = () => {
 
   const previousStep = (e) => {
     if (e) e.preventDefault();
+    // Clear any validation errors when going back
+    setErrorMessage(null);
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
       window.scrollTo(0, 0);
@@ -396,6 +540,12 @@ const IntakeForm = () => {
     setHeightFeet('');
     setHeightInches('');
     setWeight('');
+    setPrimaryLanguage('');
+    setPrimaryLanguageOther('');
+    setPrimaryCareProviderPhone('');
+    setEmergencyContactName('');
+    setEmergencyContactRelationship('');
+    setEmergencyContactPhone('');
     setCurrentStep(1);
     setSuccessMessage(null);
     setErrorMessage(null);
@@ -416,6 +566,62 @@ const IntakeForm = () => {
     try {
       // Combine date parts into YYYY-MM-DD format
       const combinedFormAnswers = { ...formAnswers };
+
+      // Add Primary Language field
+      // Find the custom module for primary language or use a synthetic ID
+      if (form) {
+        const primaryLanguageModule = form.customModules.find(m =>
+          m.label?.toLowerCase().includes('primary language')
+        );
+
+        // Use the actual value (from dropdown or "Other" text field)
+        const primaryLanguageValue = primaryLanguage === 'Other' ? primaryLanguageOther : primaryLanguage;
+
+        if (primaryLanguageModule && primaryLanguageValue) {
+          combinedFormAnswers[primaryLanguageModule.id] = primaryLanguageValue;
+        } else if (primaryLanguageValue) {
+          // If no existing module found, create a synthetic entry
+          // This will need to be added as a custom field in Healthie
+          combinedFormAnswers['primary_language'] = primaryLanguageValue;
+        }
+
+        // Add Primary Care Provider Phone if provided
+        if (primaryCareProviderPhone.trim()) {
+          const primaryCarePhoneModule = form.customModules.find(m =>
+            m.label?.toLowerCase().includes('primary care') &&
+            m.label?.toLowerCase().includes('phone')
+          );
+
+          if (primaryCarePhoneModule) {
+            combinedFormAnswers[primaryCarePhoneModule.id] = primaryCareProviderPhone;
+          } else {
+            // Create synthetic entry if no module found
+            combinedFormAnswers['primary_care_provider_phone'] = primaryCareProviderPhone;
+          }
+        }
+
+        // Add Emergency Contact fields (replace the old textarea)
+        const emergencyContactModule = form.customModules.find(m =>
+          m.label?.toLowerCase().includes('emergency contact')
+        );
+
+        if (emergencyContactModule) {
+          // Build combined emergency contact string
+          const emergencyParts = [];
+          if (emergencyContactName.trim()) emergencyParts.push(`Name: ${emergencyContactName}`);
+          if (emergencyContactRelationship.trim()) emergencyParts.push(`Relationship: ${emergencyContactRelationship}`);
+          if (emergencyContactPhone.trim()) emergencyParts.push(`Phone: ${emergencyContactPhone}`);
+
+          if (emergencyParts.length > 0) {
+            combinedFormAnswers[emergencyContactModule.id] = emergencyParts.join('; ');
+          }
+        } else {
+          // Create synthetic entries if no module found
+          if (emergencyContactName.trim()) combinedFormAnswers['emergency_contact_name'] = emergencyContactName;
+          if (emergencyContactRelationship.trim()) combinedFormAnswers['emergency_contact_relationship'] = emergencyContactRelationship;
+          if (emergencyContactPhone.trim()) combinedFormAnswers['emergency_contact_phone'] = emergencyContactPhone;
+        }
+      }
 
       // Capture all signatures DIRECTLY into combinedFormAnswers (not using state)
       if (form) {
@@ -475,6 +681,12 @@ const IntakeForm = () => {
         setHeightFeet('');
         setHeightInches('');
         setWeight('');
+        setPrimaryLanguage('');
+        setPrimaryLanguageOther('');
+        setPrimaryCareProviderPhone('');
+        setEmergencyContactName('');
+        setEmergencyContactRelationship('');
+        setEmergencyContactPhone('');
 
         // Re-initialize empty dictionaries
         if (form) {
@@ -528,11 +740,216 @@ const IntakeForm = () => {
     return '';
   };
 
+  // Helper to determine if field should be treated as required
+  const isFieldRequired = (module) => {
+    if (module.required) return true;
+
+    // Critical fields that should be treated as required (only Date of Birth)
+    const isCriticalField = module.label?.toLowerCase().includes('date of birth');
+
+    return isCriticalField;
+  };
+
+  // Format phone number as user types: (123)123-1234
+  const formatPhoneNumber = (value) => {
+    // Remove all non-digit characters
+    const digitsOnly = value.replace(/\D/g, '');
+
+    // Format based on length
+    if (digitsOnly.length === 0) return '';
+    if (digitsOnly.length <= 3) return `(${digitsOnly}`;
+    if (digitsOnly.length <= 6) return `(${digitsOnly.slice(0, 3)})${digitsOnly.slice(3)}`;
+    return `(${digitsOnly.slice(0, 3)})${digitsOnly.slice(3, 6)}-${digitsOnly.slice(6, 10)}`;
+  };
+
   // Render field based on type
   const renderField = (module) => {
     // Skip Patient Agreement header on step 5
     if (currentStep === 5 && module.label?.toLowerCase().includes('patient agreement')) {
       return null;
+    }
+
+    // CHANGE: Sex label - Update to "Sex assigned at birth"
+    if (module.label === 'Sex') {
+      return (
+        <div className="mb-3" key={module.id}>
+          <label className="form-label fw-bold">
+            Sex assigned at birth
+            {isFieldRequired(module) && <span className="text-danger">*</span>}
+          </label>
+          {renderFieldInput(module)}
+        </div>
+      );
+    }
+
+    // CHANGE: Primary care physician - Update label and add phone field
+    if (module.label?.toLowerCase().includes('primary care physician')) {
+      return (
+        <div key={module.id}>
+          <div className="mb-3">
+            <label className="form-label fw-bold">
+              Primary care provider name
+            </label>
+            <input
+              type="text"
+              className="form-control"
+              value={getFormAnswer(module.id)}
+              onChange={(e) => setFormAnswer(module.id, e.target.value)}
+            />
+          </div>
+          <div className="mb-3">
+            <label className="form-label fw-bold">
+              Primary care provider phone number
+            </label>
+            <input
+              type="tel"
+              className="form-control"
+              value={primaryCareProviderPhone}
+              onChange={(e) => {
+                const formatted = formatPhoneNumber(e.target.value);
+                setPrimaryCareProviderPhone(formatted);
+              }}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    // CHANGE: Emergency contact - Split into 3 fields
+    if (module.label?.toLowerCase().includes('emergency contact')) {
+      return (
+        <div key={module.id}>
+          <div className="mb-3">
+            <label className="form-label fw-bold">
+              Emergency contact name
+            </label>
+            <input
+              type="text"
+              className="form-control"
+              value={emergencyContactName}
+              onChange={(e) => setEmergencyContactName(e.target.value)}
+            />
+          </div>
+          <div className="mb-3">
+            <label className="form-label fw-bold">
+              Emergency contact relationship
+            </label>
+            <select
+              className="form-select"
+              value={emergencyContactRelationship}
+              onChange={(e) => setEmergencyContactRelationship(e.target.value)}
+            >
+              <option value="">Select relationship...</option>
+              <option value="Caregiver">Caregiver</option>
+              <option value="Child">Child</option>
+              <option value="Dependent">Dependent</option>
+              <option value="Family Member">Family Member</option>
+              <option value="Legal Guardian">Legal Guardian</option>
+              <option value="Parent">Parent</option>
+              <option value="Spouse">Spouse</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div className="mb-3">
+            <label className="form-label fw-bold">
+              Emergency contact phone number
+            </label>
+            <input
+              type="tel"
+              className="form-control"
+              value={emergencyContactPhone}
+              onChange={(e) => {
+                const formatted = formatPhoneNumber(e.target.value);
+                setEmergencyContactPhone(formatted);
+              }}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    // PHASE 1 CHANGE: Trauma history - Change from textarea to Yes/No radio
+    if (module.label?.toLowerCase().includes('history of physical or psychological trauma')) {
+      return (
+        <div className="mb-3" key={module.id}>
+          <label className="form-label fw-bold">
+            Do you have any history of physical or psychological trauma?
+            {isFieldRequired(module) && <span className="text-danger">*</span>}
+          </label>
+          <div className="mt-2">
+            <div className="form-check">
+              <input
+                className="form-check-input"
+                type="radio"
+                name={module.id}
+                id={`${module.id}_yes`}
+                value="Yes"
+                checked={getFormAnswer(module.id) === 'Yes'}
+                onChange={(e) => setFormAnswer(module.id, e.target.value)}
+                required={module.required}
+              />
+              <label className="form-check-label" htmlFor={`${module.id}_yes`}>
+                Yes
+              </label>
+            </div>
+            <div className="form-check">
+              <input
+                className="form-check-input"
+                type="radio"
+                name={module.id}
+                id={`${module.id}_no`}
+                value="No"
+                checked={getFormAnswer(module.id) === 'No'}
+                onChange={(e) => setFormAnswer(module.id, e.target.value)}
+                required={module.required}
+              />
+              <label className="form-check-label" htmlFor={`${module.id}_no`}>
+                No
+              </label>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // PHASE 1 CHANGE: PT question - Update label with 3-month time period
+    if (module.label?.toLowerCase().includes('if you have done pt, when was the last time')) {
+      return (
+        <div className="mb-3" key={module.id}>
+          <label className="form-label fw-bold">
+            Have you done physical therapy in the last 3 months?
+            {isFieldRequired(module) && <span className="text-danger">*</span>}
+          </label>
+          <input
+            type="text"
+            className="form-control"
+            value={getFormAnswer(module.id)}
+            onChange={(e) => setFormAnswer(module.id, e.target.value)}
+            placeholder="If yes, when was the last time?"
+            required={module.required}
+          />
+        </div>
+      );
+    }
+
+    // PHASE 1 CHANGE: Allergies - Clarify to include all allergies
+    if (module.label?.toLowerCase().includes('medication allergies')) {
+      return (
+        <div className="mb-3" key={module.id}>
+          <label className="form-label fw-bold">
+            Do you have any allergies? (medications, food, environmental, etc.)
+            {isFieldRequired(module) && <span className="text-danger">*</span>}
+          </label>
+          <textarea
+            className="form-control"
+            rows="3"
+            value={getFormAnswer(module.id)}
+            onChange={(e) => setFormAnswer(module.id, e.target.value)}
+            placeholder="Please list all allergies"
+            required={module.required}
+          />
+        </div>
+      );
     }
 
     // Label or read-only field
@@ -548,7 +965,7 @@ const IntakeForm = () => {
       <div className="mb-3" key={module.id}>
         <label className="form-label fw-bold">
           {module.label}
-          {module.required && <span className="text-danger">*</span>}
+          {isFieldRequired(module) && <span className="text-danger">*</span>}
         </label>
 
         {renderFieldInput(module)}
@@ -974,7 +1391,66 @@ const IntakeForm = () => {
         <div className="card">
           <div className="card-body">
             <h5 className="card-title">{getSectionTitle()}</h5>
-            {getModulesForCurrentStep().map(module => renderField(module))}
+            {getModulesForCurrentStep().map((module, index) => {
+              const fields = [renderField(module)];
+
+              // Insert Primary Language after BMI field on Step 2
+              if (currentStep === 2 && module.label === 'BMI') {
+                fields.push(
+                  <div key="primary-language" className="mb-3">
+                    <label htmlFor="primaryLanguage" className="form-label fw-bold">
+                      Primary Language <span className="text-danger">*</span>
+                    </label>
+                    <select
+                      id="primaryLanguage"
+                      className="form-select"
+                      value={primaryLanguage}
+                      onChange={(e) => {
+                        setPrimaryLanguage(e.target.value);
+                        // Clear "Other" text when changing selection
+                        if (e.target.value !== 'Other') {
+                          setPrimaryLanguageOther('');
+                        }
+                      }}
+                      required
+                    >
+                      <option value="">Select language...</option>
+                      <option value="English">English</option>
+                      <option value="Spanish">Spanish</option>
+                      <option value="Chinese (Mandarin/Cantonese)">Chinese (Mandarin/Cantonese)</option>
+                      <option value="Vietnamese">Vietnamese</option>
+                      <option value="Tagalog">Tagalog</option>
+                      <option value="Arabic">Arabic</option>
+                      <option value="French">French</option>
+                      <option value="Korean">Korean</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                );
+
+                // Add conditional "Other" text field
+                if (primaryLanguage === 'Other') {
+                  fields.push(
+                    <div key="primary-language-other" className="mb-3">
+                      <label htmlFor="primaryLanguageOther" className="form-label fw-bold">
+                        Specify your primary language <span className="text-danger">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="primaryLanguageOther"
+                        className="form-control"
+                        value={primaryLanguageOther}
+                        onChange={(e) => setPrimaryLanguageOther(e.target.value)}
+                        placeholder="Enter your primary language"
+                        required
+                      />
+                    </div>
+                  );
+                }
+              }
+
+              return fields;
+            })}
           </div>
         </div>
 
