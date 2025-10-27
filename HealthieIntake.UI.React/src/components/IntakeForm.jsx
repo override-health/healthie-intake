@@ -45,6 +45,9 @@ const IntakeForm = () => {
   const [emergencyContactRelationship, setEmergencyContactRelationship] = useState('');
   const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
 
+  // Test mode - bypass validation
+  const [testMode, setTestMode] = useState(false);
+
   // Multi-step navigation
   const [currentStep, setCurrentStep] = useState(1);
   const totalSteps = 6;
@@ -409,6 +412,14 @@ const IntakeForm = () => {
   };
 
   const validateCurrentStep = () => {
+    // Bypass validation in test mode
+    if (testMode) {
+      return {
+        isValid: true,
+        missingFields: []
+      };
+    }
+
     const modulesForStep = getModulesForCurrentStep();
     const missingFields = [];
 
@@ -416,6 +427,9 @@ const IntakeForm = () => {
     if (currentStep === 1 && !patientId) {
       missingFields.push('Patient Healthie ID');
     }
+
+    // Track question numbers for Step 4
+    let step4QuestionNumber = 0;
 
     // Check Primary Language on step 2
     if (currentStep === 2) {
@@ -453,37 +467,48 @@ const IntakeForm = () => {
       // Skip non-input fields
       if (module.modType === 'label' || module.modType === 'read_only' || module.modType === 'staticText') return;
 
+      // Increment question number for Step 4 (before checking if required)
+      if (currentStep === 4) {
+        step4QuestionNumber++;
+      }
+
       // Use the same logic as visual indicator
       if (!isFieldRequired(module)) return;
+
+      // Determine field label for error message
+      let fieldLabel = module.label || 'Field';
+      if (currentStep === 4) {
+        fieldLabel = `Question ${step4QuestionNumber}`;
+      }
 
       // Check different field types
       if (module.modType === 'date') {
         if (!dateMonths[module.id] || !dateDays[module.id] || !dateYears[module.id]) {
-          missingFields.push(module.label || 'Date field');
+          missingFields.push(fieldLabel);
         }
       } else if (module.modType === 'checkbox') {
         if (!checkboxSelections[module.id] || checkboxSelections[module.id].size === 0) {
-          missingFields.push(module.label || 'Checkbox field');
+          missingFields.push(fieldLabel);
         }
       } else if (module.modType === 'signature') {
         const ref = signaturePadRefs.current[module.id];
         if (!ref || !ref.getDataURL || !ref.getDataURL()) {
-          missingFields.push(module.label || 'Signature');
+          missingFields.push(fieldLabel);
         }
       } else if (module.modType === 'BMI(in.)' || module.modType === 'Weight' || module.modType === 'BMI') {
         // BMI fields - check if height and weight are filled
         if (module.modType === 'BMI(in.)') {
           if (!heightFeet || !heightInches) {
-            missingFields.push('Height');
+            missingFields.push(currentStep === 4 ? fieldLabel : 'Height');
           }
           if (!weight) {
-            missingFields.push('Weight');
+            missingFields.push(currentStep === 4 ? fieldLabel : 'Weight');
           }
         }
       } else {
         // Text, textarea, radio, location, etc.
         if (!formAnswers[module.id] || formAnswers[module.id].trim() === '') {
-          missingFields.push(module.label || 'Field');
+          missingFields.push(fieldLabel);
         }
       }
     });
@@ -763,11 +788,22 @@ const IntakeForm = () => {
   };
 
   // Render field based on type
-  const renderField = (module) => {
-    // Skip Patient Agreement header on step 5
-    if (currentStep === 5 && module.label?.toLowerCase().includes('patient agreement')) {
+  const renderField = (module, questionNumber = null) => {
+    // Skip section headers that duplicate the step title
+    if (currentStep === 4 && module.label === 'PAIN ASSESSMENT') {
       return null;
     }
+    if (currentStep === 5 && (module.label === 'MEDICAL HISTORY' || module.label?.toLowerCase().includes('patient agreement'))) {
+      return null;
+    }
+
+    // For Step 4, prefix labels with question number
+    const getFieldLabel = (label) => {
+      if (questionNumber && currentStep === 4) {
+        return `${questionNumber}. ${label}`;
+      }
+      return label;
+    };
 
     // CHANGE: Sex label - Update to "Sex assigned at birth"
     if (module.label === 'Sex') {
@@ -811,6 +847,25 @@ const IntakeForm = () => {
               }}
             />
           </div>
+        </div>
+      );
+    }
+
+    // CHANGE: Pain description - Replace with pain location field
+    if (module.label?.toLowerCase().includes('tell us about your pain')) {
+      return (
+        <div className="mb-3" key={module.id}>
+          <label className="form-label fw-bold">
+            {getFieldLabel('Where is your pain located? (List all areas that are affected)')}
+            <span className="text-danger">*</span>
+          </label>
+          <textarea
+            className="form-control"
+            rows="4"
+            value={getFormAnswer(module.id)}
+            onChange={(e) => setFormAnswer(module.id, e.target.value)}
+            required
+          />
         </div>
       );
     }
@@ -964,7 +1019,7 @@ const IntakeForm = () => {
     return (
       <div className="mb-3" key={module.id}>
         <label className="form-label fw-bold">
-          {module.label}
+          {getFieldLabel(module.label)}
           {isFieldRequired(module) && <span className="text-danger">*</span>}
         </label>
 
@@ -1325,6 +1380,22 @@ const IntakeForm = () => {
         <h1 className="mb-0">Patient Intake Form</h1>
       </div>
 
+      {/* Test Mode Toggle */}
+      <div className="mb-3">
+        <div className="form-check">
+          <input
+            className="form-check-input"
+            type="checkbox"
+            id="testMode"
+            checked={testMode}
+            onChange={(e) => setTestMode(e.target.checked)}
+          />
+          <label className="form-check-label" htmlFor="testMode">
+            Test Mode (bypass required field validation)
+          </label>
+        </div>
+      </div>
+
       <form onSubmit={handleSubmit} onKeyDown={(e) => {
         // Prevent Enter key from submitting form unless on last step
         if (e.key === 'Enter' && currentStep < totalSteps) {
@@ -1358,7 +1429,6 @@ const IntakeForm = () => {
         {currentStep === 1 && (
           <div className="card mb-3">
             <div className="card-body">
-              <h5 className="card-title">Patient Information</h5>
               <div className="mb-3">
                 <label htmlFor="patientId" className="form-label">
                   Patient Healthie ID <span className="text-danger">*</span>
@@ -1390,9 +1460,18 @@ const IntakeForm = () => {
         {/* Form Fields */}
         <div className="card">
           <div className="card-body">
-            <h5 className="card-title">{getSectionTitle()}</h5>
             {getModulesForCurrentStep().map((module, index) => {
-              const fields = [renderField(module)];
+              // Track question number for Step 4
+              let questionNumber = null;
+              if (currentStep === 4) {
+                // Count all fields before this one (excluding labels)
+                const allModules = getModulesForCurrentStep();
+                questionNumber = allModules.slice(0, index + 1).filter(m =>
+                  m.modType !== 'label' && m.modType !== 'read_only' && m.modType !== 'staticText'
+                ).length;
+              }
+
+              const fields = [renderField(module, questionNumber)];
 
               // Insert Primary Language after BMI field on Step 2
               if (currentStep === 2 && module.label === 'BMI') {
