@@ -37,14 +37,13 @@ Web-based patient intake form that collects onboarding information from patients
 **Status:** ✅ Complete
 
 **Requirements:**
-- Create ASP.NET Core Web API project ✅
-- Move HealthieApiClient to API layer ✅
+- Create REST API for Healthie operations ✅
 - Create REST API endpoints for Healthie operations ✅
 - Add Docker support ✅
 - Test API endpoints ✅
 
 **Technical Notes:**
-- Created HealthieIntake.Api project (ASP.NET Core 9.0)
+- Created HealthieIntake.Api.Py (Python FastAPI)
 - API Endpoints created:
   - `GET /api/healthie/patients/{patientId}` - Get patient by ID
   - `GET /api/healthie/forms/{formId}` - Get form structure
@@ -52,30 +51,55 @@ Web-based patient intake form that collects onboarding information from patients
   - `GET /api/healthie/patients/{patientId}/forms` - List patient's forms
   - `GET /api/healthie/forms/details/{formAnswerGroupId}` - Get form details
   - `DELETE /api/healthie/forms/{formAnswerGroupId}` - Delete form
-- Reused Models and HealthieApiClient from Phase 1
-- Configured dependency injection for HealthieApiClient
-- Added Dockerfile for containerization
-- Tested locally on port 5095 - all endpoints working
-- Ready for Docker deployment when Docker daemon is running
+- Pydantic models for type safety
+- GraphQL client (gql library)
+- CORS configured for React UI
+- Automatic OpenAPI documentation (Swagger/ReDoc)
+- Tested locally on port 5096 - all endpoints working
+- Dockerfile ready for deployment
 
 ---
 
 ### Phase 3: UI
-**Status:** Not Started
+**Status:** ✅ Complete
 
 **Requirements:**
--
+- Create web-based intake form ✅
+- Multi-step wizard with progress tracking ✅
+- All field types implemented ✅
+- Form auto-save and restore ✅
+- Mapbox address autocomplete ✅
+- Canvas signature pad ✅
+- Override Health branding ✅
+- API integration ✅
 
 **Technical Notes:**
--
+- Created HealthieIntake.UI.React (React 18 + Vite)
+- 6-step form wizard
+- LocalStorage for progress persistence
+- All 50 fields from Healthie form supported
+- Mapbox GL JS for address autocomplete
+- signature_pad library for canvas signatures
+- BMI calculator (height + weight)
+- Tested locally on port 5173
+- Successfully submits to Healthie staging API
 
 ---
 
-## Technical Stack
-- .NET 9.0 / C#
-- Healthie GraphQL API
-- API Key authentication
-- GraphQL.Client library
+## Technical Stack (Active)
+- **Frontend:** React 18 + Vite + JavaScript
+- **Backend:** Python 3.11+ + FastAPI
+- **API Integration:** Healthie GraphQL API
+- **Authentication:** API Key
+- **GraphQL Client:** gql (Python)
+- **UI Libraries:** Bootstrap 5, Mapbox GL JS, signature_pad
+- **Deployment:** Docker-ready
+
+## Archived Stack
+Original .NET/Blazor implementation archived in `_archive/`:
+- Blazor WebAssembly (HealthieIntake.UI)
+- ASP.NET Core 9.0 API (HealthieIntake.Api)
+- Fully functional and preserved for reference
 
 ## API Configuration
 - **Environment:** Staging
