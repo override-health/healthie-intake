@@ -54,6 +54,12 @@ const IntakeForm = () => {
   // Physical therapy participation question (custom field)
   const [participatingInPT, setParticipatingInPT] = useState('');
 
+  // Physical activity engagement Yes/No question (custom field)
+  const [engagesInPhysicalActivity, setEngagesInPhysicalActivity] = useState('');
+
+  // Physical activity description (custom field - sub-question)
+  const [physicalActivityDescription, setPhysicalActivityDescription] = useState('');
+
   // Test mode - bypass validation
   const [testMode, setTestMode] = useState(false);
 
@@ -186,7 +192,9 @@ const IntakeForm = () => {
         emergencyContactPhone,
         hospitalizedRecently,
         hasMedicationAllergies,
-        participatingInPT
+        participatingInPT,
+        engagesInPhysicalActivity,
+        physicalActivityDescription
       };
       localStorage.setItem(getStorageKey(), JSON.stringify(progress));
     } catch (error) {
@@ -224,6 +232,8 @@ const IntakeForm = () => {
         if (progress.hospitalizedRecently) setHospitalizedRecently(progress.hospitalizedRecently);
         if (progress.hasMedicationAllergies) setHasMedicationAllergies(progress.hasMedicationAllergies);
         if (progress.participatingInPT) setParticipatingInPT(progress.participatingInPT);
+        if (progress.engagesInPhysicalActivity) setEngagesInPhysicalActivity(progress.engagesInPhysicalActivity);
+        if (progress.physicalActivityDescription) setPhysicalActivityDescription(progress.physicalActivityDescription);
       }
     } catch (error) {
       console.log('Failed to load progress:', error.message);
@@ -665,6 +675,16 @@ const IntakeForm = () => {
         if (participatingInPT.trim()) {
           combinedFormAnswers['participating_in_pt'] = participatingInPT;
         }
+
+        // Add Physical activity engagement question
+        if (engagesInPhysicalActivity.trim()) {
+          combinedFormAnswers['engages_in_physical_activity'] = engagesInPhysicalActivity;
+        }
+
+        // Add Physical activity description (sub-question)
+        if (physicalActivityDescription.trim()) {
+          combinedFormAnswers['physical_activity_description'] = physicalActivityDescription;
+        }
       }
 
       // Capture all signatures DIRECTLY into combinedFormAnswers (not using state)
@@ -1074,12 +1094,12 @@ const IntakeForm = () => {
       );
     }
 
-    // PHASE 1 CHANGE: Trauma history - Change from textarea to Yes/No radio
+    // CHANGE: Physical activity engagement - Change from textarea to Yes/No radio with sub-question
     if (module.label?.toLowerCase().includes('history of physical or psychological trauma')) {
       return (
         <div className="mb-3" key={module.id}>
           <label className="form-label fw-bold">
-            {getFieldLabel('Do you have any history of physical or psychological trauma?')}
+            {getFieldLabel('Do you engage in regular physical activity outside of your normal daily tasks?')}
             {isFieldRequired(module) && <span className="text-danger">*</span>}
           </label>
           <div className="mt-2">
@@ -1087,14 +1107,14 @@ const IntakeForm = () => {
               <input
                 className="form-check-input"
                 type="radio"
-                name={module.id}
-                id={`${module.id}_yes`}
+                name="engages_in_physical_activity"
+                id="physical_activity_yes"
                 value="Yes"
-                checked={getFormAnswer(module.id) === 'Yes'}
-                onChange={(e) => setFormAnswer(module.id, e.target.value)}
+                checked={engagesInPhysicalActivity === 'Yes'}
+                onChange={(e) => setEngagesInPhysicalActivity(e.target.value)}
                 required={module.required}
               />
-              <label className="form-check-label" htmlFor={`${module.id}_yes`}>
+              <label className="form-check-label" htmlFor="physical_activity_yes">
                 Yes
               </label>
             </div>
@@ -1102,14 +1122,14 @@ const IntakeForm = () => {
               <input
                 className="form-check-input"
                 type="radio"
-                name={module.id}
-                id={`${module.id}_no`}
+                name="engages_in_physical_activity"
+                id="physical_activity_no"
                 value="No"
-                checked={getFormAnswer(module.id) === 'No'}
-                onChange={(e) => setFormAnswer(module.id, e.target.value)}
+                checked={engagesInPhysicalActivity === 'No'}
+                onChange={(e) => setEngagesInPhysicalActivity(e.target.value)}
                 required={module.required}
               />
-              <label className="form-check-label" htmlFor={`${module.id}_no`}>
+              <label className="form-check-label" htmlFor="physical_activity_no">
                 No
               </label>
             </div>
@@ -1905,6 +1925,26 @@ const IntakeForm = () => {
                     </div>
                   );
                 }
+              }
+
+              // Insert Physical Activity Description (sub-question 9b) after physical activity question on Step 5
+              // Only show if user answered "Yes" to engaging in physical activity
+              if (currentStep === 5 && module.label?.toLowerCase().includes('history of physical or psychological trauma') && engagesInPhysicalActivity === 'Yes') {
+                fields.push(
+                  <div key="physical-activity-description" className="mb-3">
+                    <label htmlFor="physicalActivityDescription" className="form-label fw-bold">
+                      9b. Describe the type and frequency of your physical activity.
+                    </label>
+                    <textarea
+                      id="physicalActivityDescription"
+                      className="form-control"
+                      rows="3"
+                      value={physicalActivityDescription}
+                      onChange={(e) => setPhysicalActivityDescription(e.target.value)}
+                      placeholder="Describe your physical activities and how often you do them..."
+                    />
+                  </div>
+                );
               }
 
               return fields;
