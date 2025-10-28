@@ -9,8 +9,9 @@ from typing import List, Dict, Any
 import logging
 
 from config import settings
-from models import Patient, CustomModuleForm, FormAnswerGroupInput
+from models import Patient, CustomModuleForm, FormAnswerGroupInput, IntakeSubmission
 from services import HealthieApiClient
+from repositories import IntakeRepository
 
 # Configure logging
 logging.basicConfig(
@@ -40,6 +41,9 @@ healthie_client = HealthieApiClient(
     api_url=settings.healthie_api_url,
     api_key=settings.healthie_api_key
 )
+
+# Initialize MongoDB repository
+intake_repo = IntakeRepository()
 
 
 @app.get("/")
@@ -161,6 +165,130 @@ async def delete_form(form_answer_group_id: str):
     except Exception as e:
         logger.error(f"Error deleting form {form_answer_group_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# NEW: MongoDB-backed Intake Endpoints (POC)
+# ============================================================================
+
+@app.post("/api/intake/submit")
+async def submit_intake(intake: IntakeSubmission):
+    """
+    Submit intake form to MongoDB (POC)
+
+    Replaces Healthie direct submission with local MongoDB storage.
+    Healthie sync will be handled by AWS Lambda later.
+    """
+    try:
+        intake_id = await intake_repo.save(intake)
+        logger.info(f"Intake saved: {intake_id} for {intake.email}")
+
+        return {
+            "intake_id": intake_id,
+            "status": "success",
+            "message": "Intake submission saved successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error saving intake: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/intake/{intake_id}")
+async def get_intake(intake_id: str):
+    """
+    Get intake submission by ID
+
+    Returns the complete intake document from MongoDB.
+    """
+    try:
+        intake = await intake_repo.find_by_id(intake_id)
+        if not intake:
+            raise HTTPException(status_code=404, detail="Intake not found")
+
+        # Convert ObjectId to string for JSON serialization
+        intake["_id"] = str(intake["_id"])
+        return intake
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching intake {intake_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/intake/patient/{email}")
+async def get_patient_intakes(email: str):
+    """
+    Get all intake submissions for a patient email
+
+    Returns list of intakes sorted by most recent first.
+    """
+    try:
+        intakes = await intake_repo.find_by_email(email)
+
+        # Convert ObjectIds to strings
+        for intake in intakes:
+            intake["_id"] = str(intake["_id"])
+
+        return {
+            "email": email,
+            "count": len(intakes),
+            "intakes": intakes
+        }
+    except Exception as e:
+        logger.error(f"Error fetching intakes for {email}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/intake/list")
+async def list_intakes(limit: int = 50):
+    """
+    List recent intake submissions
+
+    For testing/debugging purposes. Shows most recent intakes.
+    """
+    try:
+        intakes = await intake_repo.find_all(limit=limit)
+        count = await intake_repo.count()
+
+        # Convert ObjectIds to strings
+        for intake in intakes:
+            intake["_id"] = str(intake["_id"])
+
+        return {
+            "total_count": count,
+            "returned_count": len(intakes),
+            "intakes": intakes
+        }
+    except Exception as e:
+        logger.error(f"Error listing intakes: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint for monitoring
+
+    Returns status of both Healthie connection and MongoDB connection.
+    """
+    mongo_status = "unknown"
+    try:
+        count = await intake_repo.count()
+        mongo_status = f"connected ({count} intakes)"
+    except Exception as e:
+        mongo_status = f"error: {str(e)}"
+
+    return {
+        "status": "healthy",
+        "database": {
+            "type": "mongodb",
+            "status": mongo_status
+        },
+        "healthie_api": {
+            "url": settings.healthie_api_url,
+            "configured": bool(settings.healthie_api_key)
+        }
+    }
 
 
 if __name__ == "__main__":
