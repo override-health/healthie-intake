@@ -1329,8 +1329,8 @@ const IntakeForm = () => {
       );
     }
 
-    // CHANGE: Family history "other" details - Number as conditional sub-question (14b)
-    // NOTE: 14b is HARDCODED - not calculated. See QUESTION_NUMBERING.md
+    // CHANGE: Family history "other" details - Number as conditional sub-question (11b)
+    // NOTE: 11b is HARDCODED - not calculated. See QUESTION_NUMBERING.md
     if (module.id === '19056492') {
       // Only show if "Other" is selected in family history checkboxes
       const familyHistoryModule = form.customModules.find(m =>
@@ -1344,11 +1344,11 @@ const IntakeForm = () => {
         return null;
       }
 
-      // This is a follow-up to the family history question, always labeled as 14b
+      // This is a follow-up to the family history question, always labeled as 11b
       return (
         <div className="mb-3" key={module.id}>
           <label className="form-label fw-bold">
-            14b. If other, provide details here.
+            11b. Describe your family history
             {isFieldRequired(module) && <span className="text-danger">*</span>}
           </label>
           <input
@@ -1362,11 +1362,105 @@ const IntakeForm = () => {
       );
     }
 
+    // CHANGE: Substance use details - Number as conditional sub-question (12b)
+    // NOTE: 12b is HARDCODED - not calculated. See QUESTION_NUMBERING.md
+    if (module.id === '19056494') {
+      // Only show if any checkbox is selected in substance use checkboxes
+      // BUT hide if "None of the above" is the ONLY selection
+      const substanceUseModule = form.customModules.find(m =>
+        m.label?.toLowerCase().includes('use any of the following')
+      );
+
+      if (substanceUseModule && checkboxSelections[substanceUseModule.id]) {
+        const selections = checkboxSelections[substanceUseModule.id];
+        // Hide if no selections
+        if (selections.size === 0) {
+          return null;
+        }
+        // Hide if "None of the above" is the only selection
+        if (selections.size === 1 && selections.has('None of the above')) {
+          return null;
+        }
+      } else {
+        return null;
+      }
+
+      // This is a follow-up to the substance use question, always labeled as 12b
+      return (
+        <div className="mb-3" key={module.id}>
+          <label className="form-label fw-bold">
+            12b. {module.label}
+            {isFieldRequired(module) && <span className="text-danger">*</span>}
+          </label>
+          <input
+            type="text"
+            className="form-control"
+            value={getFormAnswer(module.id)}
+            onChange={(e) => setFormAnswer(module.id, e.target.value)}
+            required={module.required}
+          />
+        </div>
+      );
+    }
+
+    // CHANGE: Unhealthy relationship details - Number as conditional sub-question (13b)
+    // NOTE: 13b is HARDCODED - not calculated. See QUESTION_NUMBERING.md
+    if (module.id === '19056496') {
+      // Only show if "Yes" is selected in unhealthy relationship question
+      const unhealthyRelationshipModule = form.customModules.find(m =>
+        m.label?.toLowerCase().includes('unhealthy relationship')
+      );
+
+      if (unhealthyRelationshipModule && getFormAnswer(unhealthyRelationshipModule.id)) {
+        if (getFormAnswer(unhealthyRelationshipModule.id) !== 'Yes') {
+          return null;
+        }
+      } else {
+        return null;
+      }
+
+      // This is a follow-up to the unhealthy relationship question, always labeled as 13b
+      return (
+        <div className="mb-3" key={module.id}>
+          <label className="form-label fw-bold">
+            13b. {module.label}
+            {isFieldRequired(module) && <span className="text-danger">*</span>}
+          </label>
+          <input
+            type="text"
+            className="form-control"
+            value={getFormAnswer(module.id)}
+            onChange={(e) => setFormAnswer(module.id, e.target.value)}
+            required={module.required}
+          />
+        </div>
+      );
+    }
+
+    // CHANGE: Skip "Top 3 goals" field (removed from form)
+    if (module.id === '19056498') {
+      return null;
+    }
+
     // Label or read-only field
     if (module.modType === 'label' || module.modType === 'read_only' || module.modType === 'staticText') {
       return (
         <div className="mb-3" key={module.id}>
           <div className="alert alert-info" dangerouslySetInnerHTML={{ __html: module.label }} />
+        </div>
+      );
+    }
+
+    // CHANGE: Family history label - Update to "Select all that apply"
+    if (module.label?.toLowerCase().includes('run in your family')) {
+      return (
+        <div className="mb-3" key={module.id}>
+          <label className="form-label fw-bold">
+            {getFieldLabel('Do any of the following run in your family? Select all that apply')}
+            {isFieldRequired(module) && <span className="text-danger">*</span>}
+          </label>
+
+          {renderFieldInput(module)}
         </div>
       );
     }
@@ -1828,7 +1922,7 @@ const IntakeForm = () => {
               let questionNumber = null;
               // Count all fields before this one (excluding labels AND sub-questions)
               const allModules = getModulesForCurrentStep();
-              const subQuestionIds = ['19056477', '19056479', '19056483', '19056485', '19056487', '19056492']; // Surgery list (2b), Surgery details (3b), Medication allergies (special case - hardcoded as 5/5b), Procedures other (6b), Other treatment strategies (7b), Family history other (14b)
+              const subQuestionIds = ['19056477', '19056479', '19056483', '19056485', '19056487', '19056492', '19056494', '19056496', '19056498']; // Surgery list (2b), Surgery details (3b), Medication allergies (special case - hardcoded as 5/5b), Procedures other (6b), Other treatment strategies (7b), Family history other (11b), Substance use details (12b), Unhealthy relationship details (13b), Top 3 goals (removed)
               questionNumber = allModules.slice(0, index + 1).filter(m =>
                 m.modType !== 'label' &&
                 m.modType !== 'read_only' &&
