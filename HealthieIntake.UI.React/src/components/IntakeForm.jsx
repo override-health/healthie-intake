@@ -717,21 +717,76 @@ const IntakeForm = () => {
         }
       });
 
-      const formSubmission = {
-        customModuleFormId: FORM_ID,
-        userId: patientId,
-        formAnswers: Object.entries(combinedFormAnswers)
-          .filter(([_, value]) => value)
-          .map(([customModuleId, answer]) => ({
-            customModuleId,
-            answer
-          }))
+      // Extract patient demographics from form answers
+      // Find the modules for patient info
+      let firstName = '';
+      let lastName = '';
+      let email = '';
+      let dateOfBirth = '';
+      let phone = '';
+
+      if (form) {
+        // Extract patient info from form answers
+        form.customModules.forEach(module => {
+          const label = module.label?.toLowerCase() || '';
+          const answer = combinedFormAnswers[module.id];
+
+          if (label.includes('first name') && !label.includes('emergency')) {
+            firstName = answer || '';
+          } else if (label.includes('last name') && !label.includes('emergency')) {
+            lastName = answer || '';
+          } else if (label.includes('email')) {
+            email = answer || '';
+          } else if (label.includes('date of birth')) {
+            dateOfBirth = answer || '';
+          } else if (label.includes('phone') && !label.includes('emergency') && !label.includes('primary care')) {
+            phone = answer || '';
+          }
+        });
+      }
+
+      // Build MongoDB submission object
+      const mongoSubmission = {
+        first_name: firstName || 'Unknown',
+        last_name: lastName || 'Patient',
+        date_of_birth: dateOfBirth || '1990-01-01',
+        email: email || 'patient@example.com',
+        phone: phone || '',
+        form_data: {
+          // Store all form answers
+          answers: combinedFormAnswers,
+
+          // Store metadata
+          patient_id: patientId,
+          form_id: FORM_ID,
+          submission_date: new Date().toISOString(),
+
+          // Custom fields we track
+          primary_language: primaryLanguage === 'Other' ? primaryLanguageOther : primaryLanguage,
+          primary_care_provider_phone: primaryCareProviderPhone,
+          emergency_contact: {
+            name: emergencyContactName,
+            relationship: emergencyContactRelationship,
+            phone: emergencyContactPhone
+          },
+          hospitalized_recently: hospitalizedRecently,
+          has_medication_allergies: hasMedicationAllergies,
+          participating_in_pt: participatingInPT,
+          engages_in_physical_activity: engagesInPhysicalActivity,
+          physical_activity_description: physicalActivityDescription,
+
+          // BMI fields
+          height_feet: heightFeet,
+          height_inches: heightInches,
+          weight: weight
+        }
       };
 
-      const response = await axios.post(`${API_BASE_URL}/api/healthie/forms/submit`, formSubmission);
+      // Submit to MongoDB API
+      const response = await axios.post(`${API_BASE_URL}/api/intake/submit`, mongoSubmission);
 
-      if (response.data && response.data.formAnswerGroupId) {
-        setSuccessMessage(`Form submitted successfully! Form Answer Group ID: ${response.data.formAnswerGroupId}`);
+      if (response.data && response.data.intake_id) {
+        setSuccessMessage(`Form submitted successfully! Intake ID: ${response.data.intake_id}`);
 
         // Clear localStorage after successful submission
         clearFormProgress();
@@ -754,6 +809,8 @@ const IntakeForm = () => {
         setHospitalizedRecently('');
         setHasMedicationAllergies('');
         setParticipatingInPT('');
+        setEngagesInPhysicalActivity('');
+        setPhysicalActivityDescription('');
 
         // Re-initialize empty dictionaries
         if (form) {
