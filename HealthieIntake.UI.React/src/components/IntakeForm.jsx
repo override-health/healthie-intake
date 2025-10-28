@@ -45,6 +45,15 @@ const IntakeForm = () => {
   const [emergencyContactRelationship, setEmergencyContactRelationship] = useState('');
   const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
 
+  // Hospitalization question (custom field)
+  const [hospitalizedRecently, setHospitalizedRecently] = useState('');
+
+  // Medication allergies Yes/No question (custom field)
+  const [hasMedicationAllergies, setHasMedicationAllergies] = useState('');
+
+  // Physical therapy participation question (custom field)
+  const [participatingInPT, setParticipatingInPT] = useState('');
+
   // Test mode - bypass validation
   const [testMode, setTestMode] = useState(false);
 
@@ -72,7 +81,7 @@ const IntakeForm = () => {
     if (form) {
       saveFormProgress();
     }
-  }, [formAnswers, dateMonths, dateDays, dateYears, checkboxSelections, currentStep, primaryLanguage, primaryLanguageOther, primaryCareProviderPhone, emergencyContactName, emergencyContactRelationship, emergencyContactPhone]);
+  }, [formAnswers, dateMonths, dateDays, dateYears, checkboxSelections, currentStep, primaryLanguage, primaryLanguageOther, primaryCareProviderPhone, emergencyContactName, emergencyContactRelationship, emergencyContactPhone, hospitalizedRecently, hasMedicationAllergies, participatingInPT]);
 
   // Calculate BMI when height or weight changes
   useEffect(() => {
@@ -174,7 +183,10 @@ const IntakeForm = () => {
         primaryCareProviderPhone,
         emergencyContactName,
         emergencyContactRelationship,
-        emergencyContactPhone
+        emergencyContactPhone,
+        hospitalizedRecently,
+        hasMedicationAllergies,
+        participatingInPT
       };
       localStorage.setItem(getStorageKey(), JSON.stringify(progress));
     } catch (error) {
@@ -209,6 +221,9 @@ const IntakeForm = () => {
         if (progress.emergencyContactName) setEmergencyContactName(progress.emergencyContactName);
         if (progress.emergencyContactRelationship) setEmergencyContactRelationship(progress.emergencyContactRelationship);
         if (progress.emergencyContactPhone) setEmergencyContactPhone(progress.emergencyContactPhone);
+        if (progress.hospitalizedRecently) setHospitalizedRecently(progress.hospitalizedRecently);
+        if (progress.hasMedicationAllergies) setHasMedicationAllergies(progress.hasMedicationAllergies);
+        if (progress.participatingInPT) setParticipatingInPT(progress.participatingInPT);
       }
     } catch (error) {
       console.log('Failed to load progress:', error.message);
@@ -339,17 +354,8 @@ const IntakeForm = () => {
           // Remove "If other therapy" comment field (ID: 19056490)
           if (m.label?.toLowerCase().includes('if other') && m.label?.toLowerCase().includes('comment')) return false;
 
-          // PHASE 1: Conditional logic for "Other procedures" field (ID: 19056485)
-          // Only show if "Other" was selected in procedures checkbox
-          if (m.label?.toLowerCase().includes('if other, list them here')) {
-            const proceduresModule = allModules.find(mod =>
-              mod.label?.toLowerCase().includes('have you had any of the following procedures')
-            );
-            if (proceduresModule && checkboxSelections[proceduresModule.id]) {
-              return checkboxSelections[proceduresModule.id].has('Other');
-            }
-            return false;
-          }
+          // NOTE: Conditional sub-question fields (19056477, 19056479, 19056485) are NOT filtered here
+          // They return null from renderField() instead, so they still count in numbering
 
           return true;
         });
@@ -467,19 +473,14 @@ const IntakeForm = () => {
       // Skip non-input fields
       if (module.modType === 'label' || module.modType === 'read_only' || module.modType === 'staticText') return;
 
-      // Increment question number for Step 4 (before checking if required)
-      if (currentStep === 4) {
-        step4QuestionNumber++;
-      }
+      // Increment question number for ALL steps (before checking if required)
+      step4QuestionNumber++;
 
       // Use the same logic as visual indicator
       if (!isFieldRequired(module)) return;
 
-      // Determine field label for error message
-      let fieldLabel = module.label || 'Field';
-      if (currentStep === 4) {
-        fieldLabel = `Question ${step4QuestionNumber}`;
-      }
+      // Determine field label for error message - use question number for all steps
+      let fieldLabel = `Question ${step4QuestionNumber}`;
 
       // Check different field types
       if (module.modType === 'date') {
@@ -499,10 +500,10 @@ const IntakeForm = () => {
         // BMI fields - check if height and weight are filled
         if (module.modType === 'BMI(in.)') {
           if (!heightFeet || !heightInches) {
-            missingFields.push(currentStep === 4 ? fieldLabel : 'Height');
+            missingFields.push(fieldLabel);
           }
           if (!weight) {
-            missingFields.push(currentStep === 4 ? fieldLabel : 'Weight');
+            missingFields.push(fieldLabel);
           }
         }
       } else {
@@ -571,6 +572,9 @@ const IntakeForm = () => {
     setEmergencyContactName('');
     setEmergencyContactRelationship('');
     setEmergencyContactPhone('');
+    setHospitalizedRecently('');
+    setHasMedicationAllergies('');
+    setParticipatingInPT('');
     setCurrentStep(1);
     setSuccessMessage(null);
     setErrorMessage(null);
@@ -646,6 +650,21 @@ const IntakeForm = () => {
           if (emergencyContactRelationship.trim()) combinedFormAnswers['emergency_contact_relationship'] = emergencyContactRelationship;
           if (emergencyContactPhone.trim()) combinedFormAnswers['emergency_contact_phone'] = emergencyContactPhone;
         }
+
+        // Add Hospitalization question
+        if (hospitalizedRecently.trim()) {
+          combinedFormAnswers['hospitalized_recently'] = hospitalizedRecently;
+        }
+
+        // Add Medication allergies Yes/No question
+        if (hasMedicationAllergies.trim()) {
+          combinedFormAnswers['has_medication_allergies'] = hasMedicationAllergies;
+        }
+
+        // Add Physical therapy participation question
+        if (participatingInPT.trim()) {
+          combinedFormAnswers['participating_in_pt'] = participatingInPT;
+        }
       }
 
       // Capture all signatures DIRECTLY into combinedFormAnswers (not using state)
@@ -712,6 +731,9 @@ const IntakeForm = () => {
         setEmergencyContactName('');
         setEmergencyContactRelationship('');
         setEmergencyContactPhone('');
+        setHospitalizedRecently('');
+        setHasMedicationAllergies('');
+        setParticipatingInPT('');
 
         // Re-initialize empty dictionaries
         if (form) {
@@ -796,10 +818,13 @@ const IntakeForm = () => {
     if (currentStep === 5 && (module.label === 'MEDICAL HISTORY' || module.label?.toLowerCase().includes('patient agreement'))) {
       return null;
     }
+    if (currentStep === 6 && module.label === 'PATIENT AGREEMENT') {
+      return null;
+    }
 
-    // For Step 4, prefix labels with question number
+    // For ALL steps, prefix labels with question number
     const getFieldLabel = (label) => {
-      if (questionNumber && currentStep === 4) {
+      if (questionNumber) {
         return `${questionNumber}. ${label}`;
       }
       return label;
@@ -810,7 +835,7 @@ const IntakeForm = () => {
       return (
         <div className="mb-3" key={module.id}>
           <label className="form-label fw-bold">
-            Sex assigned at birth
+            {getFieldLabel('Sex assigned at birth')}
             {isFieldRequired(module) && <span className="text-danger">*</span>}
           </label>
           {renderFieldInput(module)}
@@ -824,7 +849,7 @@ const IntakeForm = () => {
         <div key={module.id}>
           <div className="mb-3">
             <label className="form-label fw-bold">
-              Primary care provider name
+              {questionNumber ? `${questionNumber + 1}. ` : ''}Primary care provider name
             </label>
             <input
               type="text"
@@ -835,7 +860,7 @@ const IntakeForm = () => {
           </div>
           <div className="mb-3">
             <label className="form-label fw-bold">
-              Primary care provider phone number
+              {questionNumber ? `${questionNumber + 2}. ` : ''}Primary care provider phone number
             </label>
             <input
               type="tel"
@@ -876,7 +901,7 @@ const IntakeForm = () => {
         <div key={module.id}>
           <div className="mb-3">
             <label className="form-label fw-bold">
-              Emergency contact name
+              {getFieldLabel('Emergency contact name')}
             </label>
             <input
               type="text"
@@ -887,7 +912,7 @@ const IntakeForm = () => {
           </div>
           <div className="mb-3">
             <label className="form-label fw-bold">
-              Emergency contact relationship
+              {questionNumber ? `${questionNumber + 1}. ` : ''}Emergency contact relationship
             </label>
             <select
               className="form-select"
@@ -907,7 +932,7 @@ const IntakeForm = () => {
           </div>
           <div className="mb-3">
             <label className="form-label fw-bold">
-              Emergency contact phone number
+              {questionNumber ? `${questionNumber + 2}. ` : ''}Emergency contact phone number
             </label>
             <input
               type="tel"
@@ -923,16 +948,142 @@ const IntakeForm = () => {
       );
     }
 
+    // CHANGE: Surgery list - Number as conditional sub-question (2b)
+    // NOTE: 2b is HARDCODED - not calculated. See QUESTION_NUMBERING.md
+    if (module.id === '19056477') {
+      // Only show if "Have you been hospitalized in the past 3 months?" is answered "Yes"
+      if (hospitalizedRecently !== 'Yes') {
+        return null; // Return null instead of filtering, so it still counts in numbering
+      }
+
+      // This is a follow-up to the hospitalization question, always labeled as 2b
+      return (
+        <div className="mb-3" key={module.id}>
+          <label className="form-label fw-bold">
+            2b. List any surgeries and dates of surgeries
+            {isFieldRequired(module) && <span className="text-danger">*</span>}
+          </label>
+          <textarea
+            className="form-control"
+            rows="4"
+            value={getFormAnswer(module.id)}
+            onChange={(e) => setFormAnswer(module.id, e.target.value)}
+            required={module.required}
+          />
+        </div>
+      );
+    }
+
+    // CHANGE: Surgery upcoming question - Use dynamic numbering
+    if (module.id === '19056478') {
+      return (
+        <div className="mb-3" key={module.id}>
+          <label className="form-label fw-bold">
+            {getFieldLabel('Do you have any surgery upcoming?')}
+            {isFieldRequired(module) && <span className="text-danger">*</span>}
+          </label>
+          {renderFieldInput(module)}
+        </div>
+      );
+    }
+
+    // CHANGE: Surgery details - Number as conditional sub-question (3b)
+    // NOTE: 3b is HARDCODED - not calculated. See QUESTION_NUMBERING.md
+    if (module.id === '19056479') {
+      // Only show if "Do you have any surgery upcoming?" is answered "Yes"
+      const surgeryAnswer = formAnswers['19056478'];
+      if (surgeryAnswer !== 'Yes') {
+        return null; // Return null instead of filtering, so it still counts in numbering
+      }
+
+      // This is a follow-up to the surgery upcoming question, always labeled as 3b
+      return (
+        <div className="mb-3" key={module.id}>
+          <label className="form-label fw-bold">
+            3b. Provide details on your upcoming surgery including date and procedure
+            {isFieldRequired(module) && <span className="text-danger">*</span>}
+          </label>
+          <textarea
+            className="form-control"
+            rows="4"
+            value={getFormAnswer(module.id)}
+            onChange={(e) => setFormAnswer(module.id, e.target.value)}
+            required={module.required}
+          />
+        </div>
+      );
+    }
+
+    // CHANGE: Medical conditions - Update label + Add hospitalization question
+    if (module.label?.toLowerCase().includes('list all medical problems')) {
+      return (
+        <div key={module.id}>
+          <div className="mb-3">
+            <label className="form-label fw-bold">
+              {getFieldLabel('List your current medical conditions or diagnoses')}
+              {isFieldRequired(module) && <span className="text-danger">*</span>}
+            </label>
+            <textarea
+              className="form-control"
+              rows="4"
+              value={getFormAnswer(module.id)}
+              onChange={(e) => setFormAnswer(module.id, e.target.value)}
+              required={module.required}
+            />
+          </div>
+
+          {/* NEW: Hospitalization question - Optional Yes/No */}
+          {/* NOTE: This is a CUSTOM INSERTED FIELD (not from API) */}
+          {/* It requires the +1 adjustment in the numbering calculation - see QUESTION_NUMBERING.md */}
+          <div className="mb-3">
+            <label className="form-label fw-bold">
+              {questionNumber ? `${questionNumber + 1}. ` : ''}Have you been hospitalized in the past 3 months?
+            </label>
+            <div className="mt-2">
+              <div className="form-check form-check-inline">
+                <input
+                  className="form-check-input"
+                  type="radio"
+                  name="hospitalized_recently"
+                  id="hospitalized_yes"
+                  value="Yes"
+                  checked={hospitalizedRecently === 'Yes'}
+                  onChange={(e) => setHospitalizedRecently(e.target.value)}
+                />
+                <label className="form-check-label" htmlFor="hospitalized_yes">
+                  Yes
+                </label>
+              </div>
+              <div className="form-check form-check-inline">
+                <input
+                  className="form-check-input"
+                  type="radio"
+                  name="hospitalized_recently"
+                  id="hospitalized_no"
+                  value="No"
+                  checked={hospitalizedRecently === 'No'}
+                  onChange={(e) => setHospitalizedRecently(e.target.value)}
+                />
+                <label className="form-check-label" htmlFor="hospitalized_no">
+                  No
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // PHASE 1 CHANGE: Trauma history - Change from textarea to Yes/No radio
     if (module.label?.toLowerCase().includes('history of physical or psychological trauma')) {
       return (
         <div className="mb-3" key={module.id}>
           <label className="form-label fw-bold">
-            Do you have any history of physical or psychological trauma?
+            {getFieldLabel('Do you have any history of physical or psychological trauma?')}
             {isFieldRequired(module) && <span className="text-danger">*</span>}
           </label>
           <div className="mt-2">
-            <div className="form-check">
+            <div className="form-check form-check-inline">
               <input
                 className="form-check-input"
                 type="radio"
@@ -947,7 +1098,7 @@ const IntakeForm = () => {
                 Yes
               </label>
             </div>
-            <div className="form-check">
+            <div className="form-check form-check-inline">
               <input
                 className="form-check-input"
                 type="radio"
@@ -967,32 +1118,184 @@ const IntakeForm = () => {
       );
     }
 
-    // PHASE 1 CHANGE: PT question - Update label with 3-month time period
-    if (module.label?.toLowerCase().includes('if you have done pt, when was the last time')) {
+    // CHANGE: Other treatment strategies - Skip rendering (rendered inline with question 7)
+    // NOTE: This module is rendered inline with the therapies checkboxes, so always return null here
+    if (module.id === '19056487') {
+      return null;
+    }
+
+    // CHANGE: Therapies checkboxes - Add 7b (conditional) and PT participation question after
+    if (module.label?.toLowerCase().includes('have you tried any of the following')) {
+      // Find the 7b module to render it inline
+      const treatmentStrategiesModule = form.customModules.find(m => m.id === '19056487');
+      const showTreatmentStrategies = checkboxSelections[module.id]?.has('Other') || false;
+
       return (
-        <div className="mb-3" key={module.id}>
-          <label className="form-label fw-bold">
-            Have you done physical therapy in the last 3 months?
-            {isFieldRequired(module) && <span className="text-danger">*</span>}
-          </label>
-          <input
-            type="text"
-            className="form-control"
-            value={getFormAnswer(module.id)}
-            onChange={(e) => setFormAnswer(module.id, e.target.value)}
-            placeholder="If yes, when was the last time?"
-            required={module.required}
-          />
+        <div key={module.id}>
+          <div className="mb-3">
+            <label className="form-label fw-bold">
+              {getFieldLabel('Have you tried any of the following treatment strategies? Select all that apply')}
+              {isFieldRequired(module) && <span className="text-danger">*</span>}
+            </label>
+            {renderFieldInput(module)}
+          </div>
+
+          {/* CONDITIONAL: 7b - Describe your other treatment strategies */}
+          {showTreatmentStrategies && treatmentStrategiesModule && (
+            <div className="mb-3">
+              <label className="form-label fw-bold">
+                7b. Describe your other treatment strategies
+                {isFieldRequired(treatmentStrategiesModule) && <span className="text-danger">*</span>}
+              </label>
+              <textarea
+                className="form-control"
+                rows="4"
+                value={getFormAnswer(treatmentStrategiesModule.id)}
+                onChange={(e) => setFormAnswer(treatmentStrategiesModule.id, e.target.value)}
+                required={treatmentStrategiesModule.required}
+              />
+            </div>
+          )}
+
+          {/* NEW: Physical therapy participation question (#8) */}
+          {/* NOTE: This is a CUSTOM INSERTED FIELD (not from API) */}
+          <div className="mb-3">
+            <label className="form-label fw-bold">
+              {questionNumber ? `${questionNumber + 1}. ` : ''}Are you currently participating in physical therapy?
+            </label>
+            <div className="mt-2">
+              <div className="form-check form-check-inline">
+                <input
+                  className="form-check-input"
+                  type="radio"
+                  name="participating_in_pt"
+                  id="pt_participation_yes"
+                  value="Yes"
+                  checked={participatingInPT === 'Yes'}
+                  onChange={(e) => setParticipatingInPT(e.target.value)}
+                />
+                <label className="form-check-label" htmlFor="pt_participation_yes">
+                  Yes
+                </label>
+              </div>
+              <div className="form-check form-check-inline">
+                <input
+                  className="form-check-input"
+                  type="radio"
+                  name="participating_in_pt"
+                  id="pt_participation_no"
+                  value="No"
+                  checked={participatingInPT === 'No'}
+                  onChange={(e) => setParticipatingInPT(e.target.value)}
+                />
+                <label className="form-check-label" htmlFor="pt_participation_no">
+                  No
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
       );
     }
 
-    // PHASE 1 CHANGE: Allergies - Clarify to include all allergies
+    // CHANGE: Medication allergies - Add Yes/No question first, then conditional list (5b)
     if (module.label?.toLowerCase().includes('medication allergies')) {
+      return (
+        <div key={module.id}>
+          {/* NEW: Medication allergies Yes/No question (#5) */}
+          {/* NOTE: This is HARDCODED as question 5 - see QUESTION_NUMBERING.md */}
+          <div className="mb-3">
+            <label className="form-label fw-bold">
+              5. Do you have any medication allergies?
+            </label>
+            <div className="mt-2">
+              <div className="form-check form-check-inline">
+                <input
+                  className="form-check-input"
+                  type="radio"
+                  name="has_medication_allergies"
+                  id="med_allergies_yes"
+                  value="Yes"
+                  checked={hasMedicationAllergies === 'Yes'}
+                  onChange={(e) => setHasMedicationAllergies(e.target.value)}
+                />
+                <label className="form-check-label" htmlFor="med_allergies_yes">
+                  Yes
+                </label>
+              </div>
+              <div className="form-check form-check-inline">
+                <input
+                  className="form-check-input"
+                  type="radio"
+                  name="has_medication_allergies"
+                  id="med_allergies_no"
+                  value="No"
+                  checked={hasMedicationAllergies === 'No'}
+                  onChange={(e) => setHasMedicationAllergies(e.target.value)}
+                />
+                <label className="form-check-label" htmlFor="med_allergies_no">
+                  No
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Medication allergies list - conditional sub-question (5b) */}
+          {/* NOTE: 5b is HARDCODED - not calculated. See QUESTION_NUMBERING.md */}
+          {/* Only shows if "Do you have any medication allergies?" is answered "Yes" */}
+          {hasMedicationAllergies === 'Yes' && (
+            <div className="mb-3">
+              <label className="form-label fw-bold">
+                5b. List your medication allergies
+                {isFieldRequired(module) && <span className="text-danger">*</span>}
+              </label>
+              <textarea
+                className="form-control"
+                rows="3"
+                value={getFormAnswer(module.id)}
+                onChange={(e) => setFormAnswer(module.id, e.target.value)}
+                placeholder="Please list all medication allergies"
+                required={module.required}
+              />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // CHANGE: Procedures checkboxes - Update label to include "Select all that apply"
+    if (module.label?.toLowerCase().includes('have you had any of the following procedures')) {
       return (
         <div className="mb-3" key={module.id}>
           <label className="form-label fw-bold">
-            Do you have any allergies? (medications, food, environmental, etc.)
+            {getFieldLabel('Have you had any of the following procedures? Select all that apply')}
+            {isFieldRequired(module) && <span className="text-danger">*</span>}
+          </label>
+          {renderFieldInput(module)}
+        </div>
+      );
+    }
+
+    // CHANGE: Procedures "other" details - Number as conditional sub-question (6b)
+    // NOTE: 6b is HARDCODED - not calculated. See QUESTION_NUMBERING.md
+    if (module.id === '19056485') {
+      // Only show if "Other" is selected in procedures checkboxes
+      const proceduresModule = form.customModules.find(m =>
+        m.label?.toLowerCase().includes('have you had any of the following procedures')
+      );
+      if (proceduresModule && checkboxSelections[proceduresModule.id]) {
+        if (!checkboxSelections[proceduresModule.id].has('Other')) {
+          return null; // Return null instead of filtering, so it still counts in numbering
+        }
+      } else {
+        return null;
+      }
+
+      // This is a follow-up to the procedures question, always labeled as 6b
+      return (
+        <div className="mb-3" key={module.id}>
+          <label className="form-label fw-bold">
+            6b. Describe your other procedures
             {isFieldRequired(module) && <span className="text-danger">*</span>}
           </label>
           <textarea
@@ -1000,7 +1303,39 @@ const IntakeForm = () => {
             rows="3"
             value={getFormAnswer(module.id)}
             onChange={(e) => setFormAnswer(module.id, e.target.value)}
-            placeholder="Please list all allergies"
+            required={module.required}
+          />
+        </div>
+      );
+    }
+
+    // CHANGE: Family history "other" details - Number as conditional sub-question (14b)
+    // NOTE: 14b is HARDCODED - not calculated. See QUESTION_NUMBERING.md
+    if (module.id === '19056492') {
+      // Only show if "Other" is selected in family history checkboxes
+      const familyHistoryModule = form.customModules.find(m =>
+        m.label?.toLowerCase().includes('run in your family')
+      );
+      if (familyHistoryModule && checkboxSelections[familyHistoryModule.id]) {
+        if (!checkboxSelections[familyHistoryModule.id].has('Other')) {
+          return null; // Return null instead of filtering, so it still counts in numbering
+        }
+      } else {
+        return null;
+      }
+
+      // This is a follow-up to the family history question, always labeled as 14b
+      return (
+        <div className="mb-3" key={module.id}>
+          <label className="form-label fw-bold">
+            14b. If other, provide details here.
+            {isFieldRequired(module) && <span className="text-danger">*</span>}
+          </label>
+          <input
+            type="text"
+            className="form-control"
+            value={getFormAnswer(module.id)}
+            onChange={(e) => setFormAnswer(module.id, e.target.value)}
             required={module.required}
           />
         </div>
@@ -1461,14 +1796,58 @@ const IntakeForm = () => {
         <div className="card">
           <div className="card-body">
             {getModulesForCurrentStep().map((module, index) => {
-              // Track question number for Step 4
+              // ========================================================================
+              // WARNING: QUESTION NUMBERING IS COMPLEX - READ QUESTION_NUMBERING.md
+              // Before changing this, understand the hybrid system of:
+              // - API modules (calculated)
+              // - Custom inserted fields (manual adjustments needed)
+              // - Sub-questions (hardcoded, excluded from counting)
+              // ========================================================================
+
+              // Track question number for ALL steps
               let questionNumber = null;
-              if (currentStep === 4) {
-                // Count all fields before this one (excluding labels)
-                const allModules = getModulesForCurrentStep();
-                questionNumber = allModules.slice(0, index + 1).filter(m =>
-                  m.modType !== 'label' && m.modType !== 'read_only' && m.modType !== 'staticText'
-                ).length;
+              // Count all fields before this one (excluding labels AND sub-questions)
+              const allModules = getModulesForCurrentStep();
+              const subQuestionIds = ['19056477', '19056479', '19056483', '19056485', '19056487', '19056492']; // Surgery list (2b), Surgery details (3b), Medication allergies (special case - hardcoded as 5/5b), Procedures other (6b), Other treatment strategies (7b), Family history other (14b)
+              questionNumber = allModules.slice(0, index + 1).filter(m =>
+                m.modType !== 'label' &&
+                m.modType !== 'read_only' &&
+                m.modType !== 'staticText' &&
+                !subQuestionIds.includes(m.id)
+              ).length;
+
+              // Adjust for hospitalization custom field on Step 5
+              // Add +1 for fields after medical conditions BUT before allergies
+              if (currentStep === 5 && index > 0) {
+                const medicalConditionsModule = allModules.find(m =>
+                  m.label?.toLowerCase().includes('list all medical problems')
+                );
+                const allergiesModule = allModules.find(m =>
+                  m.label?.toLowerCase().includes('medication allergies')
+                );
+                const currentIndex = allModules.indexOf(module);
+                const medCondIndex = allModules.indexOf(medicalConditionsModule);
+                const allergiesIndex = allModules.indexOf(allergiesModule);
+
+                // Add 1 if after medical conditions AND before allergies (for hospitalization field)
+                if (medCondIndex >= 0 && currentIndex > medCondIndex &&
+                    allergiesIndex >= 0 && currentIndex < allergiesIndex &&
+                    !subQuestionIds.includes(module.id)) {
+                  questionNumber += 1;
+                }
+
+                // Adjust for PT participation custom field on Step 5
+                // Add +1 for fields after therapies checkboxes (for PT participation field)
+                const therapiesModule = allModules.find(m =>
+                  m.label?.toLowerCase().includes('have you tried any of the following')
+                );
+                const therapiesIndex = allModules.indexOf(therapiesModule);
+
+                // Add 1 if after therapies module (for PT participation field)
+                if (therapiesIndex >= 0 && currentIndex > therapiesIndex &&
+                    !subQuestionIds.includes(module.id)) {
+                  questionNumber += 1;
+                }
               }
 
               const fields = [renderField(module, questionNumber)];
@@ -1478,7 +1857,7 @@ const IntakeForm = () => {
                 fields.push(
                   <div key="primary-language" className="mb-3">
                     <label htmlFor="primaryLanguage" className="form-label fw-bold">
-                      Primary Language <span className="text-danger">*</span>
+                      {questionNumber + 1}. Primary Language <span className="text-danger">*</span>
                     </label>
                     <select
                       id="primaryLanguage"
@@ -1512,7 +1891,7 @@ const IntakeForm = () => {
                   fields.push(
                     <div key="primary-language-other" className="mb-3">
                       <label htmlFor="primaryLanguageOther" className="form-label fw-bold">
-                        Specify your primary language <span className="text-danger">*</span>
+                        {questionNumber + 2}. Specify your primary language <span className="text-danger">*</span>
                       </label>
                       <input
                         type="text"
