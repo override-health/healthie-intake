@@ -157,7 +157,7 @@ const TypedSignature = forwardRef(({ moduleId, initialValue }, ref) => {
               width="500"
               height="200"
               className="signature-canvas"
-              style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
+              style={{ maxWidth: '100%', height: 'auto', minHeight: '150px', display: 'block' }}
             />
           </div>
           {timestamp && (

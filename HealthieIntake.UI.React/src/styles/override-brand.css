@@ -368,3 +368,140 @@ h1, h2, h3, h4, h5, h6 {
     outline: 0;
     box-shadow: 0 0 0 0.2rem rgba(28, 183, 131, 0.15);
 }
+
+/* ========================================================================
+   RESPONSIVE MEDIA QUERIES
+   ======================================================================== */
+
+/* Mobile devices (up to 576px) */
+@media (max-width: 576px) {
+    .container {
+        padding: 16px !important;
+        margin-top: 16px;
+        margin-bottom: 16px;
+        border-radius: 12px;
+    }
+
+    .signature-canvas {
+        height: 150px !important;
+    }
+
+    /* Smaller logo on mobile */
+    .header-logo-mobile {
+        height: 50px !important;
+    }
+
+    /* Adjust card padding */
+    .card-body {
+        padding: 16px !important;
+    }
+
+    /* Reduce heading sizes */
+    h1 {
+        font-size: 1.5rem;
+    }
+}
+
+/* Small tablets (577px to 768px) */
+@media (min-width: 577px) and (max-width: 768px) {
+    .container {
+        padding: 24px !important;
+        margin-top: 20px;
+        margin-bottom: 20px;
+    }
+
+    .card-body {
+        padding: 20px !important;
+    }
+}
+
+/* Medium devices (769px to 992px) */
+@media (min-width: 769px) and (max-width: 992px) {
+    .container {
+        padding: 32px !important;
+    }
+}
+
+/* BMI field alignment - ensure all inputs have same height */
+.bmi-field-group .form-select,
+.bmi-field-group .form-control {
+    height: 48px;
+}
+
+/* Navigation button consistency - ensure Previous and Next buttons match */
+.btn-secondary,
+.btn-primary {
+    min-width: 120px;
+    padding: 12px 24px;
+    font-size: 1rem;
+    font-weight: 500;
+    border-radius: 8px;
+}
+
+/* ========================================================================
+   SCALE INPUT RESPONSIVE CONTROLS (Radio vs Slider)
+   ======================================================================== */
+
+/* Desktop: Show radio buttons, hide slider */
+@media (min-width: 577px) {
+    .scale-slider-mobile {
+        display: none !important;
+    }
+    .scale-radio-desktop {
+        display: block;
+    }
+}
+
+/* Mobile: Hide radio buttons, show slider */
+@media (max-width: 576px) {
+    .scale-radio-desktop {
+        display: none !important;
+    }
+    .scale-slider-mobile {
+        display: block;
+    }
+}
+
+/* Range slider styling */
+.scale-range-input {
+    width: 100%;
+    height: 8px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: linear-gradient(to right, #d1d1d6 0%, var(--override-green) 100%);
+    border-radius: 8px;
+    outline: none;
+    touch-action: pan-y pinch-zoom;
+}
+
+.scale-slider-mobile {
+    touch-action: pan-y pinch-zoom;
+    overflow: hidden;
+}
+
+.scale-range-input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 24px;
+    height: 24px;
+    background: var(--override-green);
+    border: 3px solid var(--override-white);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.scale-range-input::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+    background: var(--override-green);
+    border: 3px solid var(--override-white);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.scale-tick {
+    font-size: 0.75rem;
+    text-align: center;
+}

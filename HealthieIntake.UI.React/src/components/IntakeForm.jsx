@@ -1578,8 +1578,8 @@ const IntakeForm = () => {
 
       case 'date':
         return (
-          <div className="row g-2" style={{ maxWidth: '50%' }}>
-            <div className="col-4">
+          <div className="row g-2" style={{ maxWidth: '600px' }}>
+            <div className="col-4 col-sm-3 col-md-2">
               <input
                 type="text"
                 className="form-control"
@@ -1590,7 +1590,7 @@ const IntakeForm = () => {
                 required={module.required}
               />
             </div>
-            <div className="col-4">
+            <div className="col-4 col-sm-3 col-md-2">
               <input
                 type="text"
                 className="form-control"
@@ -1601,7 +1601,7 @@ const IntakeForm = () => {
                 required={module.required}
               />
             </div>
-            <div className="col-4">
+            <div className="col-4 col-sm-6 col-md-3">
               <input
                 type="text"
                 className="form-control"
@@ -1680,10 +1680,14 @@ const IntakeForm = () => {
         maxValue = 3;
       }
 
+      const currentValue = formAnswers[module.id] || '0';
+
       return (
         <div className="mt-2">
           {legend && <div className="form-text mb-2">{legend}</div>}
-          <div>
+
+          {/* Radio buttons for desktop */}
+          <div className="scale-radio-desktop">
             {[...Array(maxValue + 1)].map((_, i) => (
               <div className="form-check form-check-inline" key={i}>
                 <input
@@ -1701,6 +1705,30 @@ const IntakeForm = () => {
                 </label>
               </div>
             ))}
+          </div>
+
+          {/* Range slider for mobile */}
+          <div className="scale-slider-mobile">
+            <div className="d-flex justify-content-between mb-2">
+              <span className="text-muted small">0</span>
+              <span className="badge bg-primary fs-6">Selected: {currentValue}</span>
+              <span className="text-muted small">{maxValue}</span>
+            </div>
+            <input
+              type="range"
+              className="form-range scale-range-input"
+              min="0"
+              max={maxValue}
+              step="1"
+              value={currentValue}
+              onChange={(e) => setFormAnswer(module.id, e.target.value)}
+              required={module.required}
+            />
+            <div className="d-flex justify-content-between mt-1">
+              {[...Array(maxValue + 1)].map((_, i) => (
+                <span key={i} className="scale-tick small text-muted">{i}</span>
+              ))}
+            </div>
           </div>
         </div>
       );
@@ -1821,14 +1849,13 @@ const IntakeForm = () => {
 
   const renderBMIField = (module) => {
     return (
-      <div className="row g-2">
-        <div className="col-md-4">
-          <label className="form-label">Height (Feet)</label>
+      <div className="row g-2 bmi-field-group">
+        <div className="col-4">
+          <label className="form-label small text-nowrap">Height (Feet)</label>
           <select
             className="form-select"
             value={heightFeet}
             onChange={(e) => setHeightFeet(e.target.value)}
-            style={{ height: '38px' }}
           >
             <option value="">Select</option>
             {[3, 4, 5, 6, 7, 8].map(i => (
@@ -1836,13 +1863,12 @@ const IntakeForm = () => {
             ))}
           </select>
         </div>
-        <div className="col-md-4">
-          <label className="form-label">Height (Inches)</label>
+        <div className="col-4">
+          <label className="form-label small text-nowrap">Height (Inches)</label>
           <select
             className="form-select"
             value={heightInches}
             onChange={(e) => setHeightInches(e.target.value)}
-            style={{ height: '38px' }}
           >
             <option value="">Select</option>
             {[...Array(12)].map((_, i) => (
@@ -1850,19 +1876,18 @@ const IntakeForm = () => {
             ))}
           </select>
         </div>
-        <div className="col-md-4">
-          <label className="form-label">Weight (lbs)</label>
+        <div className="col-4">
+          <label className="form-label small text-nowrap">Weight (lbs)</label>
           <input
             type="number"
             className="form-control"
             value={weight}
             onChange={(e) => setWeight(e.target.value)}
             placeholder="lbs"
-            style={{ height: '38px' }}
           />
         </div>
         {heightFeet && heightInches && weight && (
-          <div className="mt-2">
+          <div className="col-12 mt-2">
             <strong>BMI: {calculateBMIValue().toFixed(1)}</strong>
           </div>
         )}
@@ -1895,13 +1920,14 @@ const IntakeForm = () => {
 
   return (
     <div className="container mt-4">
-      <div className="d-flex align-items-center justify-content-between mb-4">
+      <div className="d-flex flex-column flex-md-row align-items-center justify-content-md-between mb-4 gap-3 text-center text-md-start">
         <img
           src="https://i0.wp.com/override.health/wp-content/uploads/2025/08/Override-Logo_Full-Color-e1757963862728.png?w=2860&ssl=1"
           alt="Override Health"
+          className="header-logo-mobile"
           style={{ height: '60px' }}
         />
-        <h1 className="mb-0">Patient Intake Form</h1>
+        <h1 className="mb-0 fs-3 fs-md-1">Patient Intake Form</h1>
       </div>
 
       {/* Test Mode Toggle */}
@@ -2125,18 +2151,10 @@ const IntakeForm = () => {
         <div className="mt-4 mb-5 d-flex justify-content-between">
           <div>
             {currentStep > 1 && (
-              <button type="button" className="btn btn-outline-secondary" onClick={previousStep}>
+              <button type="button" className="btn btn-secondary" onClick={previousStep}>
                 &larr; Previous
               </button>
             )}
-          </div>
-          <div className="d-flex gap-2">
-            <button type="button" className="btn btn-outline-danger" onClick={clearAndStartOver}>
-              Clear & Start Over
-            </button>
-            <button type="button" className="btn btn-outline-primary" onClick={saveAndExit}>
-              Save & Exit
-            </button>
           </div>
           <div>
             {currentStep < totalSteps ? (
