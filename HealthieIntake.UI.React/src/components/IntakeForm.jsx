@@ -363,6 +363,8 @@ const IntakeForm = () => {
           if (m.label?.toLowerCase().includes('anything more you would like your override providers to know')) return false;
           // Remove "If other therapy" comment field (ID: 19056490)
           if (m.label?.toLowerCase().includes('if other') && m.label?.toLowerCase().includes('comment')) return false;
+          // Remove "Are you physically active?" field (ID: 19056497)
+          if (m.id === '19056497') return false;
 
           // NOTE: Conditional sub-question fields (19056477, 19056479, 19056485) are NOT filtered here
           // They return null from renderField() instead, so they still count in numbering
