@@ -2,9 +2,10 @@
 Healthie Intake API - Python FastAPI version
 Exact port of HealthieIntake.Api (.NET) to Python
 """
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any
 import logging
 
@@ -12,6 +13,7 @@ from config import settings
 from models import Patient, CustomModuleForm, FormAnswerGroupInput, IntakeSubmission
 from services import HealthieApiClient
 from repositories import IntakeRepository
+from database import get_session, init_db
 
 # Configure logging
 logging.basicConfig(
@@ -42,8 +44,13 @@ healthie_client = HealthieApiClient(
     api_key=settings.healthie_api_key
 )
 
-# Initialize MongoDB repository
-intake_repo = IntakeRepository()
+
+# Startup event to initialize database tables
+@app.on_event("startup")
+async def startup():
+    """Initialize PostgreSQL database tables on startup"""
+    await init_db()
+    logger.info("PostgreSQL database initialized")
 
 
 @app.get("/")
@@ -172,15 +179,19 @@ async def delete_form(form_answer_group_id: str):
 # ============================================================================
 
 @app.post("/api/intake/submit")
-async def submit_intake(intake: IntakeSubmission):
+async def submit_intake(
+    intake: IntakeSubmission,
+    session: AsyncSession = Depends(get_session)
+):
     """
-    Submit intake form to MongoDB (POC)
+    Submit intake form to PostgreSQL
 
-    Replaces Healthie direct submission with local MongoDB storage.
+    Stores intake submission with JSONB flexibility.
     Healthie sync will be handled by AWS Lambda later.
     """
     try:
-        intake_id = await intake_repo.save(intake)
+        repo = IntakeRepository(session)
+        intake_id = await repo.save(intake)
         logger.info(f"Intake saved: {intake_id} for {intake.email}")
 
         return {
@@ -194,19 +205,20 @@ async def submit_intake(intake: IntakeSubmission):
 
 
 @app.get("/api/intake/{intake_id}")
-async def get_intake(intake_id: str):
+async def get_intake(
+    intake_id: str,
+    session: AsyncSession = Depends(get_session)
+):
     """
     Get intake submission by ID
 
-    Returns the complete intake document from MongoDB.
+    Returns the complete intake record from PostgreSQL.
     """
     try:
-        intake = await intake_repo.find_by_id(intake_id)
+        repo = IntakeRepository(session)
+        intake = await repo.find_by_id(intake_id)
         if not intake:
             raise HTTPException(status_code=404, detail="Intake not found")
-
-        # Convert ObjectId to string for JSON serialization
-        intake["_id"] = str(intake["_id"])
         return intake
     except HTTPException:
         raise
@@ -216,18 +228,18 @@ async def get_intake(intake_id: str):
 
 
 @app.get("/api/intake/patient/{email}")
-async def get_patient_intakes(email: str):
+async def get_patient_intakes(
+    email: str,
+    session: AsyncSession = Depends(get_session)
+):
     """
     Get all intake submissions for a patient email
 
     Returns list of intakes sorted by most recent first.
     """
     try:
-        intakes = await intake_repo.find_by_email(email)
-
-        # Convert ObjectIds to strings
-        for intake in intakes:
-            intake["_id"] = str(intake["_id"])
+        repo = IntakeRepository(session)
+        intakes = await repo.find_by_email(email)
 
         return {
             "email": email,
@@ -240,19 +252,19 @@ async def get_patient_intakes(email: str):
 
 
 @app.get("/api/intake/list")
-async def list_intakes(limit: int = 50):
+async def list_intakes(
+    limit: int = 50,
+    session: AsyncSession = Depends(get_session)
+):
     """
     List recent intake submissions
 
     For testing/debugging purposes. Shows most recent intakes.
     """
     try:
-        intakes = await intake_repo.find_all(limit=limit)
-        count = await intake_repo.count()
-
-        # Convert ObjectIds to strings
-        for intake in intakes:
-            intake["_id"] = str(intake["_id"])
+        repo = IntakeRepository(session)
+        intakes = await repo.find_all(limit=limit)
+        count = await repo.count()
 
         return {
             "total_count": count,
@@ -265,24 +277,25 @@ async def list_intakes(limit: int = 50):
 
 
 @app.get("/health")
-async def health_check():
+async def health_check(session: AsyncSession = Depends(get_session)):
     """
     Health check endpoint for monitoring
 
-    Returns status of both Healthie connection and MongoDB connection.
+    Returns status of both Healthie connection and PostgreSQL database.
     """
-    mongo_status = "unknown"
+    db_status = "unknown"
     try:
-        count = await intake_repo.count()
-        mongo_status = f"connected ({count} intakes)"
+        repo = IntakeRepository(session)
+        count = await repo.count()
+        db_status = f"connected ({count} intakes)"
     except Exception as e:
-        mongo_status = f"error: {str(e)}"
+        db_status = f"error: {str(e)}"
 
     return {
         "status": "healthy",
         "database": {
-            "type": "mongodb",
-            "status": mongo_status
+            "type": "postgresql",
+            "status": db_status
         },
         "healthie_api": {
             "url": settings.healthie_api_url,

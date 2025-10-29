@@ -1,65 +1,78 @@
 """
-MongoDB Repository for Intake Submissions
+PostgreSQL Repository for Intake Submissions
 
-Handles all database operations for intake forms.
-Uses Motor for async MongoDB operations.
+Uses SQLAlchemy async ORM with JSONB for MongoDB-like flexibility
 """
-
-from motor.motor_asyncio import AsyncIOMotorClient
-from typing import Optional, List
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from models.database import IntakeRecord
 from models.intake import IntakeSubmission
-from bson import ObjectId
-import os
+from typing import Optional, List
+from uuid import UUID
 
 
 class IntakeRepository:
     """
     Repository pattern for intake submissions
 
-    Provides clean interface for MongoDB operations
+    PostgreSQL with JSONB provides MongoDB-like flexibility
+    while maintaining relational database benefits
     """
 
-    def __init__(self, mongo_uri: str = None):
+    def __init__(self, session: AsyncSession):
         """
-        Initialize MongoDB connection
+        Initialize repository with database session
 
         Args:
-            mongo_uri: MongoDB connection string (defaults to env var)
+            session: SQLAlchemy async session
         """
-        uri = mongo_uri or os.getenv("MONGODB_URI", "mongodb://localhost:27017/healthie_intake")
-        self.client = AsyncIOMotorClient(uri)
-
-        db_name = os.getenv("MONGODB_DATABASE", "healthie_intake")
-        collection_name = os.getenv("MONGODB_COLLECTION", "intakes")
-
-        self.db = self.client[db_name]
-        self.collection = self.db[collection_name]
+        self.session = session
 
     async def save(self, intake: IntakeSubmission) -> str:
         """
-        Save intake submission to MongoDB
+        Save intake submission to PostgreSQL
 
         Args:
-            intake: IntakeSubmission model to save
+            intake: IntakeSubmission Pydantic model
 
         Returns:
-            String ID of inserted document
+            String UUID of inserted record
         """
-        result = await self.collection.insert_one(intake.to_dict())
-        return str(result.inserted_id)
+        # Convert Pydantic model to SQLAlchemy model
+        record = IntakeRecord(
+            first_name=intake.first_name,
+            last_name=intake.last_name,
+            email=intake.email,
+            date_of_birth=intake.date_of_birth,
+            phone=intake.phone,
+            schema_version=intake.schema_version,
+            status=intake.status,
+            form_data=intake.form_data  # JSONB column - stores dict as-is
+        )
+
+        self.session.add(record)
+        await self.session.commit()
+        await self.session.refresh(record)
+
+        return str(record.id)
 
     async def find_by_id(self, intake_id: str) -> Optional[dict]:
         """
-        Find intake by MongoDB ObjectId
+        Find intake by UUID
 
         Args:
-            intake_id: String representation of ObjectId
+            intake_id: String UUID
 
         Returns:
-            Document dict or None if not found
+            Dictionary representation of intake or None
         """
         try:
-            return await self.collection.find_one({"_id": ObjectId(intake_id)})
+            uuid_id = UUID(intake_id)
+            result = await self.session.execute(
+                select(IntakeRecord).where(IntakeRecord.id == uuid_id)
+            )
+            record = result.scalar_one_or_none()
+            return record.to_dict() if record else None
         except Exception:
             return None
 
@@ -71,29 +84,73 @@ class IntakeRepository:
             email: Patient email address
 
         Returns:
-            List of intake documents
+            List of intake dictionaries sorted by newest first
         """
-        cursor = self.collection.find({"email": email}).sort("created_at", -1)
-        return await cursor.to_list(length=100)
+        result = await self.session.execute(
+            select(IntakeRecord)
+            .where(IntakeRecord.email == email)
+            .order_by(IntakeRecord.created_at.desc())
+        )
+        records = result.scalars().all()
+        return [r.to_dict() for r in records]
 
     async def find_all(self, limit: int = 50) -> List[dict]:
         """
         Get most recent intake submissions
 
         Args:
-            limit: Maximum number of documents to return
+            limit: Maximum number of records to return
 
         Returns:
-            List of intake documents sorted by created_at descending
+            List of intake dictionaries sorted by newest first
         """
-        cursor = self.collection.find().sort("created_at", -1).limit(limit)
-        return await cursor.to_list(length=limit)
+        result = await self.session.execute(
+            select(IntakeRecord)
+            .order_by(IntakeRecord.created_at.desc())
+            .limit(limit)
+        )
+        records = result.scalars().all()
+        return [r.to_dict() for r in records]
 
     async def count(self) -> int:
         """
         Get total count of intake submissions
 
         Returns:
-            Total number of documents in collection
+            Total number of intake records
         """
-        return await self.collection.count_documents({})
+        result = await self.session.execute(
+            select(func.count(IntakeRecord.id))
+        )
+        return result.scalar()
+
+    # BONUS: JSONB query capabilities (MongoDB-like!)
+    async def find_by_form_field(self, field_path: str, value: str) -> List[dict]:
+        """
+        Query by JSONB field path (similar to MongoDB dot notation)
+
+        Example:
+            find_by_form_field('emergency_contact.name', 'Jane Doe')
+            find_by_form_field('answers.19056453', '1990-01-01')
+
+        Args:
+            field_path: Dot-separated path in form_data JSONB
+            value: Value to search for
+
+        Returns:
+            List of matching intake dictionaries
+        """
+        # Parse field path into JSONB accessor
+        path_parts = field_path.split('.')
+
+        # Build JSONB query
+        jsonb_path = IntakeRecord.form_data
+        for part in path_parts:
+            jsonb_path = jsonb_path[part]
+
+        result = await self.session.execute(
+            select(IntakeRecord)
+            .where(jsonb_path.astext == value)
+        )
+        records = result.scalars().all()
+        return [r.to_dict() for r in records]
