@@ -3,6 +3,7 @@ import axios from 'axios';
 import { API_BASE_URL, PATIENT_ID as DEFAULT_PATIENT_ID, FORM_ID } from '../config';
 import MapboxAddressInput from './MapboxAddressInput';
 import SignaturePad from './SignaturePad';
+import TypedSignature from './TypedSignature';
 
 const IntakeForm = () => {
   // State management
@@ -697,7 +698,22 @@ const IntakeForm = () => {
           if (ref && ref.getDataURL) {
             const dataURL = ref.getDataURL();
             if (dataURL) {
-              combinedFormAnswers[module.id] = dataURL;
+              // Check if this is new typed signature format (JSON string) or old format (data URL)
+              try {
+                const parsedData = JSON.parse(dataURL);
+                // New TypedSignature format - store structured data
+                if (parsedData.agreed && parsedData.typedName) {
+                  combinedFormAnswers[module.id] = dataURL; // Store as JSON string
+                  // Also store individual fields for easier querying
+                  combinedFormAnswers[`${module.id}_agreed`] = parsedData.agreed;
+                  combinedFormAnswers[`${module.id}_timestamp`] = parsedData.timestamp;
+                  combinedFormAnswers[`${module.id}_typed_name`] = parsedData.typedName;
+                  combinedFormAnswers[`${module.id}_image`] = parsedData.imageDataURL;
+                }
+              } catch (e) {
+                // Old SignaturePad format - just a data URL string
+                combinedFormAnswers[module.id] = dataURL;
+              }
             }
           }
         });
@@ -1618,7 +1634,7 @@ const IntakeForm = () => {
 
       case 'signature':
         return (
-          <SignaturePad
+          <TypedSignature
             ref={(ref) => signaturePadRefs.current[module.id] = ref}
             moduleId={module.id}
             initialValue={getFormAnswer(module.id)}
