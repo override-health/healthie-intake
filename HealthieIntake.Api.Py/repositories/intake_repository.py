@@ -3,12 +3,13 @@ PostgreSQL Repository for Intake Submissions
 
 Uses SQLAlchemy async ORM with JSONB for MongoDB-like flexibility
 """
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import IntakeRecord
 from models.intake import IntakeSubmission
 from typing import Optional, List
 from uuid import UUID
+from datetime import datetime
 
 
 class IntakeRepository:
@@ -40,6 +41,7 @@ class IntakeRepository:
         """
         # Convert Pydantic model to SQLAlchemy model
         record = IntakeRecord(
+            patient_healthie_id=intake.patient_healthie_id,
             first_name=intake.first_name,
             last_name=intake.last_name,
             email=intake.email,
@@ -47,6 +49,9 @@ class IntakeRepository:
             phone=intake.phone,
             schema_version=intake.schema_version,
             status=intake.status,
+            current_step=intake.current_step,
+            last_updated_at=intake.last_updated_at or datetime.utcnow(),
+            submitted_at=intake.submitted_at,
             form_data=intake.form_data  # JSONB column - stores dict as-is
         )
 
@@ -154,3 +159,88 @@ class IntakeRepository:
         )
         records = result.scalars().all()
         return [r.to_dict() for r in records]
+
+    # ============================================================================
+    # DRAFT SUPPORT METHODS
+    # ============================================================================
+
+    async def save_draft(self, intake: IntakeSubmission) -> str:
+        """
+        Save or update draft progress
+
+        If a draft exists for this healthie_id, updates it.
+        Otherwise, creates a new draft.
+
+        Args:
+            intake: IntakeSubmission with status='draft'
+
+        Returns:
+            String UUID of draft record
+        """
+        # Check if draft already exists
+        existing_draft = await self.get_draft_by_healthie_id(intake.patient_healthie_id)
+
+        if existing_draft:
+            # Update existing draft
+            await self.session.execute(
+                update(IntakeRecord)
+                .where(IntakeRecord.id == UUID(existing_draft['id']))
+                .values(
+                    first_name=intake.first_name,
+                    last_name=intake.last_name,
+                    email=intake.email,
+                    date_of_birth=intake.date_of_birth,
+                    phone=intake.phone,
+                    current_step=intake.current_step,
+                    last_updated_at=datetime.utcnow(),
+                    form_data=intake.form_data
+                )
+            )
+            await self.session.commit()
+            return existing_draft['id']
+        else:
+            # Create new draft
+            return await self.save(intake)
+
+    async def get_draft_by_healthie_id(self, healthie_id: str) -> Optional[dict]:
+        """
+        Get most recent draft for a patient
+
+        Args:
+            healthie_id: Healthie patient ID
+
+        Returns:
+            Draft intake dictionary or None
+        """
+        result = await self.session.execute(
+            select(IntakeRecord)
+            .where(IntakeRecord.patient_healthie_id == healthie_id)
+            .where(IntakeRecord.status == 'draft')
+            .order_by(IntakeRecord.last_updated_at.desc())
+            .limit(1)
+        )
+        record = result.scalar_one_or_none()
+        return record.to_dict() if record else None
+
+    async def update_draft_to_completed(self, healthie_id: str) -> bool:
+        """
+        Update draft status to completed and set submitted_at timestamp
+
+        Args:
+            healthie_id: Healthie patient ID
+
+        Returns:
+            True if updated successfully
+        """
+        result = await self.session.execute(
+            update(IntakeRecord)
+            .where(IntakeRecord.patient_healthie_id == healthie_id)
+            .where(IntakeRecord.status == 'draft')
+            .values(
+                status='completed',
+                submitted_at=datetime.utcnow(),
+                last_updated_at=datetime.utcnow()
+            )
+        )
+        await self.session.commit()
+        return result.rowcount > 0

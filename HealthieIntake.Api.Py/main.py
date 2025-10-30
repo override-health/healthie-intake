@@ -194,8 +194,61 @@ async def delete_form(form_answer_group_id: str):
 
 
 # ============================================================================
-# NEW: MongoDB-backed Intake Endpoints (POC)
+# NEW: PostgreSQL Intake Endpoints with Draft Support
 # ============================================================================
+
+@app.get("/api/intake/draft/{healthie_id}")
+async def get_draft(
+    healthie_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Get draft progress for a patient by Healthie ID
+
+    Returns most recent draft if exists, otherwise 404.
+    """
+    try:
+        repo = IntakeRepository(session)
+        draft = await repo.get_draft_by_healthie_id(healthie_id)
+        if not draft:
+            raise HTTPException(status_code=404, detail="No draft found for this patient")
+        return draft
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching draft for {healthie_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/intake/draft")
+async def save_draft(
+    intake: IntakeSubmission,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Save draft progress
+
+    Creates new draft or updates existing draft for this patient.
+    """
+    try:
+        repo = IntakeRepository(session)
+
+        # Ensure status is draft
+        intake.status = "draft"
+
+        draft_id = await repo.save_draft(intake)
+        logger.info(f"Draft saved: {draft_id} for healthie_id {intake.patient_healthie_id}")
+
+        return {
+            "draft_id": draft_id,
+            "status": "success",
+            "message": "Draft saved successfully",
+            "last_updated_at": intake.last_updated_at.isoformat() if intake.last_updated_at else None
+        }
+    except Exception as e:
+        logger.error(f"Error saving draft: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/intake/submit")
 async def submit_intake(
@@ -205,13 +258,42 @@ async def submit_intake(
     """
     Submit intake form to PostgreSQL
 
-    Stores intake submission with JSONB flexibility.
+    Updates existing draft to 'completed' status or creates new completed record.
     Healthie sync will be handled by AWS Lambda later.
     """
     try:
         repo = IntakeRepository(session)
-        intake_id = await repo.save(intake)
-        logger.info(f"Intake saved: {intake_id} for {intake.email}")
+
+        # Set status to completed and add submitted_at timestamp
+        intake.status = "completed"
+        from datetime import datetime
+        intake.submitted_at = datetime.utcnow()
+
+        # Try to update existing draft
+        updated = await repo.update_draft_to_completed(intake.patient_healthie_id)
+
+        if updated:
+            # Draft was updated - get the updated record
+            draft = await repo.get_draft_by_healthie_id(intake.patient_healthie_id)
+            if draft:
+                # Now update the form_data with final submission data
+                from sqlalchemy import update
+                from models.database import IntakeRecord
+                from uuid import UUID
+
+                await session.execute(
+                    update(IntakeRecord)
+                    .where(IntakeRecord.id == UUID(draft['id']))
+                    .values(form_data=intake.form_data)
+                )
+                await session.commit()
+
+                intake_id = draft['id']
+                logger.info(f"Draft updated to completed: {intake_id} for {intake.email}")
+        else:
+            # No draft exists, create new completed record
+            intake_id = await repo.save(intake)
+            logger.info(f"New intake submitted: {intake_id} for {intake.email}")
 
         return {
             "intake_id": intake_id,

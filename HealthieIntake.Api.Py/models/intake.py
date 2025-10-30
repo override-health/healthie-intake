@@ -22,9 +22,13 @@ class IntakeSubmission(BaseModel):
     # Metadata
     schema_version: str = Field(default="1.0-poc", description="Schema version for tracking form changes")
     created_at: Optional[datetime] = Field(default=None, description="Timestamp when intake was created")
-    status: str = Field(default="submitted", description="Status: submitted, synced, failed")
+    status: str = Field(default="draft", description="Status: draft or completed")
+    current_step: Optional[str] = Field(None, description="Current form step (1-6) for draft")
+    last_updated_at: Optional[datetime] = Field(default=None, description="Last modification timestamp")
+    submitted_at: Optional[datetime] = Field(None, description="When form was completed")
 
     # Core Patient Info (validated)
+    patient_healthie_id: str = Field(..., description="Healthie patient ID")
     first_name: str = Field(..., min_length=1, max_length=100, description="Patient first name")
     last_name: str = Field(..., min_length=1, max_length=100, description="Patient last name")
     date_of_birth: str = Field(..., description="Patient date of birth (YYYY-MM-DD)")
@@ -38,9 +42,11 @@ class IntakeSubmission(BaseModel):
     )
 
     def __init__(self, **data):
-        """Auto-set created_at timestamp if not provided"""
+        """Auto-set timestamps if not provided"""
         if data.get('created_at') is None:
             data['created_at'] = datetime.utcnow()
+        if data.get('last_updated_at') is None:
+            data['last_updated_at'] = datetime.utcnow()
         super().__init__(**data)
 
     class Config:
@@ -50,11 +56,14 @@ class IntakeSubmission(BaseModel):
         }
         json_schema_extra = {
             "example": {
+                "patient_healthie_id": "3642270",
                 "first_name": "John",
                 "last_name": "Doe",
                 "date_of_birth": "1990-01-01",
                 "email": "john.doe@example.com",
                 "phone": "(555) 123-4567",
+                "status": "draft",
+                "current_step": "3",
                 "form_data": {
                     "gender": "Male",
                     "emergency_contact": {
