@@ -220,6 +220,48 @@ async def get_draft(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/intake/completed/{healthie_id}")
+async def check_completed_intake(
+    healthie_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Check if a completed intake exists for this patient
+
+    Returns intake info if completed intake exists, otherwise 404.
+    Used to prevent duplicate submissions.
+    """
+    try:
+        repo = IntakeRepository(session)
+
+        # Check if a completed intake exists
+        from sqlalchemy import select
+        from models.database import IntakeRecord
+
+        result = await session.execute(
+            select(IntakeRecord)
+            .where(IntakeRecord.patient_healthie_id == healthie_id)
+            .where(IntakeRecord.status == 'completed')
+            .order_by(IntakeRecord.submitted_at.desc())
+        )
+        completed_intake = result.scalar_one_or_none()
+
+        if not completed_intake:
+            raise HTTPException(status_code=404, detail="No completed intake found")
+
+        return {
+            "intake_id": str(completed_intake.id),
+            "status": completed_intake.status,
+            "submitted_at": completed_intake.submitted_at.isoformat() if completed_intake.submitted_at else None,
+            "message": "A completed intake form already exists for this patient"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking completed intake for {healthie_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/intake/draft")
 async def save_draft(
     intake: IntakeSubmission,
@@ -250,6 +292,40 @@ async def save_draft(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/api/intake/draft/{healthie_id}")
+async def delete_draft(
+    healthie_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Delete draft for a patient by Healthie ID
+
+    Used for "Clear & Start Over" functionality.
+    """
+    try:
+        from sqlalchemy import delete
+        from models.database import IntakeRecord
+
+        result = await session.execute(
+            delete(IntakeRecord)
+            .where(IntakeRecord.patient_healthie_id == healthie_id)
+            .where(IntakeRecord.status == 'draft')
+        )
+        await session.commit()
+
+        deleted_count = result.rowcount
+        logger.info(f"Deleted {deleted_count} draft(s) for healthie_id {healthie_id}")
+
+        return {
+            "success": True,
+            "deleted_count": deleted_count,
+            "message": f"Draft deleted successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error deleting draft for {healthie_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/intake/submit")
 async def submit_intake(
     intake: IntakeSubmission,
@@ -269,27 +345,34 @@ async def submit_intake(
         from datetime import datetime
         intake.submitted_at = datetime.utcnow()
 
-        # Try to update existing draft
-        updated = await repo.update_draft_to_completed(intake.patient_healthie_id)
+        # Check if draft exists
+        draft = await repo.get_draft_by_healthie_id(intake.patient_healthie_id)
 
-        if updated:
-            # Draft was updated - get the updated record
-            draft = await repo.get_draft_by_healthie_id(intake.patient_healthie_id)
-            if draft:
-                # Now update the form_data with final submission data
-                from sqlalchemy import update
-                from models.database import IntakeRecord
-                from uuid import UUID
+        if draft:
+            # Update existing draft with all final submission data in one operation
+            from sqlalchemy import update
+            from models.database import IntakeRecord
+            from uuid import UUID
 
-                await session.execute(
-                    update(IntakeRecord)
-                    .where(IntakeRecord.id == UUID(draft['id']))
-                    .values(form_data=intake.form_data)
+            await session.execute(
+                update(IntakeRecord)
+                .where(IntakeRecord.id == UUID(draft['id']))
+                .values(
+                    status='completed',
+                    submitted_at=datetime.utcnow(),
+                    last_updated_at=datetime.utcnow(),
+                    first_name=intake.first_name,
+                    last_name=intake.last_name,
+                    email=intake.email,
+                    date_of_birth=intake.date_of_birth,
+                    phone=intake.phone,
+                    form_data=intake.form_data
                 )
-                await session.commit()
+            )
+            await session.commit()
 
-                intake_id = draft['id']
-                logger.info(f"Draft updated to completed: {intake_id} for {intake.email}")
+            intake_id = draft['id']
+            logger.info(f"Draft updated to completed: {intake_id} for {intake.email}")
         else:
             # No draft exists, create new completed record
             intake_id = await repo.save(intake)
@@ -302,6 +385,7 @@ async def submit_intake(
         }
     except Exception as e:
         logger.error(f"Error saving intake: {str(e)}")
+        logger.exception("Full traceback:")
         raise HTTPException(status_code=500, detail=str(e))
 
 

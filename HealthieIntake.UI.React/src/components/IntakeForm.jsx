@@ -23,6 +23,12 @@ const IntakeForm = () => {
   const [searchedPatients, setSearchedPatients] = useState([]);
   const [searchErrorMessage, setSearchErrorMessage] = useState(null);
 
+  // Store Healthie patient demographics for form submission
+  const [healthieFirstName, setHealthieFirstName] = useState('');
+  const [healthieLastName, setHealthieLastName] = useState('');
+  const [healthieEmail, setHealthieEmail] = useState('');
+  const [healthieDOB, setHealthieDOB] = useState('');
+
   // Date fields - separate month, day, year
   const [dateMonths, setDateMonths] = useState({});
   const [dateDays, setDateDays] = useState({});
@@ -76,6 +82,16 @@ const IntakeForm = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const totalSteps = 6;
 
+  // Thank you page
+  const [showThankYou, setShowThankYou] = useState(false);
+
+  // Track if draft has been loaded to prevent premature auto-save
+  const [draftLoaded, setDraftLoaded] = useState(false);
+
+  // Track if patient already has a completed intake
+  const [hasCompletedIntake, setHasCompletedIntake] = useState(false);
+  const [completedIntakeInfo, setCompletedIntakeInfo] = useState(null);
+
   // Signature pad refs
   const signaturePadRefs = useRef({});
 
@@ -91,12 +107,12 @@ const IntakeForm = () => {
     }
   }, [form]);
 
-  // Save progress whenever form data changes
+  // Save progress whenever form data changes (but only after draft has been loaded)
   useEffect(() => {
-    if (form) {
+    if (form && draftLoaded) {
       saveFormProgress();
     }
-  }, [formAnswers, dateMonths, dateDays, dateYears, checkboxSelections, currentStep, primaryLanguage, primaryLanguageOther, primaryCareProviderPhone, emergencyContactName, emergencyContactRelationship, emergencyContactPhone, hospitalizedRecently, hasMedicationAllergies, participatingInPT]);
+  }, [formAnswers, dateMonths, dateDays, dateYears, checkboxSelections, currentStep, primaryLanguage, primaryLanguageOther, primaryCareProviderPhone, emergencyContactName, emergencyContactRelationship, emergencyContactPhone, hospitalizedRecently, hasMedicationAllergies, participatingInPT, draftLoaded]);
 
   // Calculate BMI when height or weight changes
   useEffect(() => {
@@ -167,6 +183,29 @@ const IntakeForm = () => {
     }
   };
 
+  const checkCompletedIntake = async (healthieId) => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/intake/completed/${healthieId}`, {
+        validateStatus: (status) => status === 200 || status === 404 // 404 is expected
+      });
+
+      if (response.status === 404) {
+        // No completed intake - this is good, user can proceed
+        setHasCompletedIntake(false);
+        setCompletedIntakeInfo(null);
+        return false;
+      }
+
+      // If we get here, a completed intake exists (200)
+      setHasCompletedIntake(true);
+      setCompletedIntakeInfo(response.data);
+      return true;
+    } catch (error) {
+      console.error('Error checking completed intake:', error);
+      return false;
+    }
+  };
+
   const searchPatient = async () => {
     // Reset previous search results
     setSearchStatus('searching');
@@ -197,6 +236,26 @@ const IntakeForm = () => {
         setPatientId(patients[0].id);
         setSearchStatus('found');
         setSearchedPatients(patients);
+
+        // Store patient demographics from Healthie for form submission
+        setHealthieFirstName(patients[0].first_name || searchFirstName.trim());
+        setHealthieLastName(patients[0].last_name || searchLastName.trim());
+        setHealthieEmail(patients[0].email || '');
+        setHealthieDOB(patients[0].dob || searchDOB.trim());
+
+        // Check if patient already has a completed intake
+        const hasCompleted = await checkCompletedIntake(patients[0].id);
+
+        if (!hasCompleted) {
+          // No completed intake - load draft if exists
+          loadMostRecentDraft(patients[0].id).then(result => {
+            if (result) {
+              applyDraftData(result.data, result.source);
+            }
+            // Mark draft as loaded (even if no draft exists) to enable auto-save
+            setDraftLoaded(true);
+          });
+        }
       } else {
         // Multiple matches - let user select
         setSearchStatus('multiple');
@@ -208,10 +267,30 @@ const IntakeForm = () => {
     }
   };
 
-  const selectPatient = (patient) => {
+  const selectPatient = async (patient) => {
     setPatientId(patient.id);
     setSearchStatus('found');
     setSearchedPatients([patient]);
+
+    // Store patient demographics from Healthie for form submission
+    setHealthieFirstName(patient.first_name || searchFirstName.trim());
+    setHealthieLastName(patient.last_name || searchLastName.trim());
+    setHealthieEmail(patient.email || '');
+    setHealthieDOB(patient.dob || searchDOB.trim());
+
+    // Check if patient already has a completed intake
+    const hasCompleted = await checkCompletedIntake(patient.id);
+
+    if (!hasCompleted) {
+      // No completed intake - load draft if exists
+      loadMostRecentDraft(patient.id).then(result => {
+        if (result) {
+          applyDraftData(result.data, result.source);
+        }
+        // Mark draft as loaded (even if no draft exists) to enable auto-save
+        setDraftLoaded(true);
+      });
+    }
   };
 
   const shouldHaveCheckboxGroup = (module) => {
@@ -230,6 +309,7 @@ const IntakeForm = () => {
       const progress = {
         patientId,
         currentStep,
+        last_updated_at: new Date().toISOString(), // Add timestamp for conflict resolution
         formAnswers,
         dateMonths,
         dateDays,
@@ -294,6 +374,8 @@ const IntakeForm = () => {
     } catch (error) {
       console.log('Failed to load progress:', error.message);
     }
+    // Mark draft as loaded to enable auto-save
+    setDraftLoaded(true);
   };
 
   const clearFormProgress = () => {
@@ -301,6 +383,256 @@ const IntakeForm = () => {
       localStorage.removeItem(getStorageKey());
     } catch (error) {
       console.log('Failed to clear progress:', error.message);
+    }
+  };
+
+  // ============================================================================
+  // DRAFT DB SYNC FUNCTIONS
+  // ============================================================================
+
+  const loadDraftFromDB = async (healthieId) => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/intake/draft/${healthieId}`, {
+        validateStatus: (status) => status === 200 || status === 404 // 404 is expected
+      });
+
+      if (response.status === 404) {
+        // No draft found - this is OK
+        return null;
+      }
+
+      return response.data;
+    } catch (error) {
+      console.error('Error loading draft from DB:', error);
+      return null;
+    }
+  };
+
+  const saveDraftToDB = async () => {
+    if (!patientId) {
+      console.log('Cannot save draft - no patient ID');
+      return;
+    }
+
+    try {
+      // Collect all form data (similar to submission format)
+      const draftData = {
+        patient_healthie_id: patientId,
+        first_name: searchFirstName || '',
+        last_name: searchLastName || '',
+        email: formAnswers['email'] || '',
+        date_of_birth: searchDOB || '',
+        phone: formAnswers['phone'] || '',
+        current_step: currentStep.toString(),
+        status: 'draft',
+        last_updated_at: new Date().toISOString(),
+        form_data: {
+          answers: formAnswers,
+          dateMonths,
+          dateDays,
+          dateYears,
+          checkboxSelections: Object.fromEntries(
+            Object.entries(checkboxSelections).map(([k, v]) => [k, Array.from(v)])
+          ),
+          heightFeet,
+          heightInches,
+          weight,
+          primaryLanguage,
+          primaryLanguageOther,
+          primaryCareProviderPhone,
+          emergencyContactName,
+          emergencyContactRelationship,
+          emergencyContactPhone,
+          hospitalizedRecently,
+          hasMedicationAllergies,
+          participatingInPT,
+          engagesInPhysicalActivity,
+          physicalActivityDescription
+        }
+      };
+
+      const response = await axios.post(`${API_BASE_URL}/api/intake/draft`, draftData);
+      console.log('Draft saved to DB:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Error saving draft to DB:', error);
+      // Don't throw - localStorage is our backup
+      return null;
+    }
+  };
+
+  const clearAndStartOver = async () => {
+    if (!patientId) {
+      alert('No patient selected. Please search for your account first.');
+      return;
+    }
+
+    const confirmClear = window.confirm(
+      'Are you sure you want to clear all progress and start over? This will delete your draft and cannot be undone.'
+    );
+
+    if (!confirmClear) return;
+
+    try {
+      // 1. Delete draft from database
+      await axios.delete(`${API_BASE_URL}/api/intake/draft/${patientId}`, {
+        validateStatus: (status) => status === 200 || status === 404 // 404 is OK if no draft exists
+      });
+
+      // 2. Clear localStorage
+      localStorage.removeItem(`healthie_intake_${patientId}`);
+
+      // 3. Reset all form state to initial values
+      setFormAnswers({});
+      setDateMonths({});
+      setDateDays({});
+      setDateYears({});
+      setCheckboxSelections({});
+      setCurrentStep(1);
+      setPrimaryLanguage('');
+      setPrimaryLanguageOther('');
+      setPrimaryCareProviderPhone('');
+      setEmergencyContactName('');
+      setEmergencyContactRelationship('');
+      setEmergencyContactPhone('');
+      setHospitalizedRecently(null);
+      setHasMedicationAllergies(null);
+      setParticipatingInPT(null);
+      setEngagesInPhysicalActivity(null);
+      setPhysicalActivityDescription('');
+      setDraftLoaded(false);
+
+      // 4. Clear patient selection and return to search
+      setPatientId(DEFAULT_PATIENT_ID);
+      setSearchStatus(null);
+      setSearchedPatients([]);
+      setSearchFirstName('');
+      setSearchLastName('');
+      setSearchDOB('');
+      setHealthieFirstName('');
+      setHealthieLastName('');
+      setHealthieEmail('');
+      setHealthieDOB('');
+      setHasCompletedIntake(false);
+      setCompletedIntakeInfo(null);
+
+      alert('All progress has been cleared. You can now start over.');
+    } catch (error) {
+      console.error('Error clearing form:', error);
+      alert('There was an error clearing your progress. Please try again.');
+    }
+  };
+
+  const loadMostRecentDraft = async (healthieId) => {
+    // Get both localStorage and DB drafts
+    const localDraft = (() => {
+      try {
+        const json = localStorage.getItem(`healthie_intake_${healthieId}`);
+        return json ? JSON.parse(json) : null;
+      } catch (error) {
+        console.error('Error loading localStorage draft:', error);
+        return null;
+      }
+    })();
+
+    const dbDraft = await loadDraftFromDB(healthieId);
+
+    // Compare timestamps and use most recent
+    if (!localDraft && !dbDraft) {
+      console.log('No drafts found');
+      return null;
+    }
+
+    if (!localDraft) {
+      console.log('Using DB draft (no local draft)');
+      return { source: 'db', data: dbDraft };
+    }
+
+    if (!dbDraft) {
+      console.log('Using localStorage draft (no DB draft)');
+      return { source: 'localStorage', data: localDraft };
+    }
+
+    // Both exist - compare timestamps
+    const localTime = new Date(localDraft.last_updated_at || 0).getTime();
+    const dbTime = new Date(dbDraft.last_updated_at || 0).getTime();
+
+    if (dbTime > localTime) {
+      console.log('Using DB draft (newer)');
+      return { source: 'db', data: dbDraft };
+    } else {
+      console.log('Using localStorage draft (newer)');
+      return { source: 'localStorage', data: localDraft };
+    }
+  };
+
+  const applyDraftData = (draft, source) => {
+    if (!draft) return;
+
+    try {
+      if (source === 'db') {
+        // DB format has form_data nested
+        const formData = draft.form_data || {};
+
+        if (draft.current_step) setCurrentStep(parseInt(draft.current_step));
+        if (formData.answers) setFormAnswers(formData.answers);
+        if (formData.dateMonths) setDateMonths(formData.dateMonths);
+        if (formData.dateDays) setDateDays(formData.dateDays);
+        if (formData.dateYears) setDateYears(formData.dateYears);
+        if (formData.checkboxSelections) {
+          setCheckboxSelections(
+            Object.fromEntries(
+              Object.entries(formData.checkboxSelections).map(([k, v]) => [k, new Set(v)])
+            )
+          );
+        }
+        if (formData.heightFeet) setHeightFeet(formData.heightFeet);
+        if (formData.heightInches) setHeightInches(formData.heightInches);
+        if (formData.weight) setWeight(formData.weight);
+        if (formData.primaryLanguage) setPrimaryLanguage(formData.primaryLanguage);
+        if (formData.primaryLanguageOther) setPrimaryLanguageOther(formData.primaryLanguageOther);
+        if (formData.primaryCareProviderPhone) setPrimaryCareProviderPhone(formData.primaryCareProviderPhone);
+        if (formData.emergencyContactName) setEmergencyContactName(formData.emergencyContactName);
+        if (formData.emergencyContactRelationship) setEmergencyContactRelationship(formData.emergencyContactRelationship);
+        if (formData.emergencyContactPhone) setEmergencyContactPhone(formData.emergencyContactPhone);
+        if (formData.hospitalizedRecently) setHospitalizedRecently(formData.hospitalizedRecently);
+        if (formData.hasMedicationAllergies) setHasMedicationAllergies(formData.hasMedicationAllergies);
+        if (formData.participatingInPT) setParticipatingInPT(formData.participatingInPT);
+        if (formData.engagesInPhysicalActivity) setEngagesInPhysicalActivity(formData.engagesInPhysicalActivity);
+        if (formData.physicalActivityDescription) setPhysicalActivityDescription(formData.physicalActivityDescription);
+      } else {
+        // localStorage format is flat
+        if (draft.currentStep) setCurrentStep(draft.currentStep);
+        if (draft.formAnswers) setFormAnswers(draft.formAnswers);
+        if (draft.dateMonths) setDateMonths(draft.dateMonths);
+        if (draft.dateDays) setDateDays(draft.dateDays);
+        if (draft.dateYears) setDateYears(draft.dateYears);
+        if (draft.checkboxSelections) {
+          setCheckboxSelections(
+            Object.fromEntries(
+              Object.entries(draft.checkboxSelections).map(([k, v]) => [k, new Set(v)])
+            )
+          );
+        }
+        if (draft.heightFeet) setHeightFeet(draft.heightFeet);
+        if (draft.heightInches) setHeightInches(draft.heightInches);
+        if (draft.weight) setWeight(draft.weight);
+        if (draft.primaryLanguage) setPrimaryLanguage(draft.primaryLanguage);
+        if (draft.primaryLanguageOther) setPrimaryLanguageOther(draft.primaryLanguageOther);
+        if (draft.primaryCareProviderPhone) setPrimaryCareProviderPhone(draft.primaryCareProviderPhone);
+        if (draft.emergencyContactName) setEmergencyContactName(draft.emergencyContactName);
+        if (draft.emergencyContactRelationship) setEmergencyContactRelationship(draft.emergencyContactRelationship);
+        if (draft.emergencyContactPhone) setEmergencyContactPhone(draft.emergencyContactPhone);
+        if (draft.hospitalizedRecently) setHospitalizedRecently(draft.hospitalizedRecently);
+        if (draft.hasMedicationAllergies) setHasMedicationAllergies(draft.hasMedicationAllergies);
+        if (draft.participatingInPT) setParticipatingInPT(draft.participatingInPT);
+        if (draft.engagesInPhysicalActivity) setEngagesInPhysicalActivity(draft.engagesInPhysicalActivity);
+        if (draft.physicalActivityDescription) setPhysicalActivityDescription(draft.physicalActivityDescription);
+      }
+
+      console.log(`Draft loaded from ${source}`);
+    } catch (error) {
+      console.error('Error applying draft data:', error);
     }
   };
 
@@ -372,13 +704,13 @@ const IntakeForm = () => {
 
     switch (currentStep) {
       case 1:
-        // Step 1: Introduction only
-        return allModules.filter(m => m.label?.includes('Thank you for taking'));
+        // Step 1: No intro text (removed as per user request)
+        return [];
 
       case 2:
         // Step 2: Personal Information (includes location)
+        // NOTE: Date of birth is now captured in Step 1 patient search, so we exclude it here
         return allModules.filter(m =>
-          m.label?.includes('Date of birth') ||
           m.modType === 'location' ||
           m.label === 'Sex' ||
           m.label === 'BMI' ||
@@ -602,6 +934,11 @@ const IntakeForm = () => {
     // Clear error message on successful validation
     setErrorMessage(null);
 
+    // Save draft to DB before moving to next step
+    saveDraftToDB().then(() => {
+      console.log('Draft saved to DB on navigation');
+    });
+
     if (currentStep < totalSteps) {
       setCurrentStep(currentStep + 1);
       window.scrollTo(0, 0);
@@ -623,30 +960,7 @@ const IntakeForm = () => {
     setSuccessMessage('Progress saved! You can return to complete the form later.');
   };
 
-  const clearAndStartOver = () => {
-    clearFormProgress();
-    setPatientId('');
-    setFormAnswers({});
-    setDateMonths({});
-    setDateDays({});
-    setDateYears({});
-    setCheckboxSelections({});
-    setHeightFeet('');
-    setHeightInches('');
-    setWeight('');
-    setPrimaryLanguage('');
-    setPrimaryLanguageOther('');
-    setPrimaryCareProviderPhone('');
-    setEmergencyContactName('');
-    setEmergencyContactRelationship('');
-    setEmergencyContactPhone('');
-    setHospitalizedRecently('');
-    setHasMedicationAllergies('');
-    setParticipatingInPT('');
-    setCurrentStep(1);
-    setSuccessMessage(null);
-    setErrorMessage(null);
-  };
+  // clearAndStartOver is now defined earlier in the file (near draft functions)
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -790,40 +1104,28 @@ const IntakeForm = () => {
         }
       });
 
-      // Extract patient demographics from form answers
-      // Find the modules for patient info
-      let firstName = '';
-      let lastName = '';
-      let email = '';
-      let dateOfBirth = '';
+      // Extract phone from form answers (if provided in form)
       let phone = '';
 
       if (form) {
-        // Extract patient info from form answers
+        // Extract phone from form answers
         form.customModules.forEach(module => {
           const label = module.label?.toLowerCase() || '';
           const answer = combinedFormAnswers[module.id];
 
-          if (label.includes('first name') && !label.includes('emergency')) {
-            firstName = answer || '';
-          } else if (label.includes('last name') && !label.includes('emergency')) {
-            lastName = answer || '';
-          } else if (label.includes('email')) {
-            email = answer || '';
-          } else if (label.includes('date of birth')) {
-            dateOfBirth = answer || '';
-          } else if (label.includes('phone') && !label.includes('emergency') && !label.includes('primary care')) {
+          if (label.includes('phone') && !label.includes('emergency') && !label.includes('primary care')) {
             phone = answer || '';
           }
         });
       }
 
-      // Build MongoDB submission object
+      // Build MongoDB submission object using Healthie patient data
       const mongoSubmission = {
-        first_name: firstName || 'Unknown',
-        last_name: lastName || 'Patient',
-        date_of_birth: dateOfBirth || '1990-01-01',
-        email: email || 'patient@example.com',
+        patient_healthie_id: patientId,
+        first_name: healthieFirstName || searchFirstName || 'Unknown',
+        last_name: healthieLastName || searchLastName || 'Patient',
+        date_of_birth: healthieDOB || searchDOB || '1990-01-01',
+        email: healthieEmail || 'patient@example.com',
         phone: phone || '',
         form_data: {
           // Store all form answers
@@ -859,7 +1161,8 @@ const IntakeForm = () => {
       const response = await axios.post(`${API_BASE_URL}/api/intake/submit`, mongoSubmission);
 
       if (response.data && response.data.intake_id) {
-        setSuccessMessage(`Form submitted successfully! Intake ID: ${response.data.intake_id}`);
+        // Show Thank You page
+        setShowThankYou(true);
 
         // Clear localStorage after successful submission
         clearFormProgress();
@@ -941,10 +1244,9 @@ const IntakeForm = () => {
   const isFieldRequired = (module) => {
     if (module.required) return true;
 
-    // Critical fields that should be treated as required (only Date of Birth)
-    const isCriticalField = module.label?.toLowerCase().includes('date of birth');
-
-    return isCriticalField;
+    // No additional critical fields needed
+    // (Date of birth is captured in Step 1 patient search)
+    return false;
   };
 
   // Format phone number as user types: (123)123-1234
@@ -1973,6 +2275,58 @@ const IntakeForm = () => {
     );
   }
 
+  // Show Thank You page after successful submission
+  if (showThankYou) {
+    return (
+      <div className="container mt-5">
+        <div className="row justify-content-center">
+          <div className="col-md-8 col-lg-6">
+            <div className="text-center">
+              <img
+                src="https://i0.wp.com/override.health/wp-content/uploads/2025/08/Override-Logo_Full-Color-e1757963862728.png?w=2860&ssl=1"
+                alt="Override Health"
+                className="mb-4"
+                style={{ height: '80px' }}
+              />
+
+              <div className="card border-0 shadow-sm">
+                <div className="card-body p-5">
+                  <div className="mb-4">
+                    <svg
+                      width="80"
+                      height="80"
+                      viewBox="0 0 100 100"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="mx-auto"
+                    >
+                      <circle cx="50" cy="50" r="50" fill="#1CB783" />
+                      <path
+                        d="M30 50 L42 62 L70 34"
+                        stroke="white"
+                        strokeWidth="6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
+
+                  <h2 className="mb-4" style={{ color: '#050038' }}>
+                    Thank you for completing your onboarding form with Override Health
+                  </h2>
+
+                  <p className="text-muted mb-4">
+                    Your information has been successfully submitted. Our team will review your intake form and be in touch with you soon.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mt-4">
       <div className="d-flex flex-column flex-md-row align-items-center justify-content-md-between mb-4 gap-3 text-center text-md-start">
@@ -1982,7 +2336,14 @@ const IntakeForm = () => {
           className="header-logo-mobile"
           style={{ height: '60px' }}
         />
-        <h1 className="mb-0 fs-3 fs-md-1">Patient Intake Form</h1>
+        <div className="text-end">
+          <h1 className="mb-0 fs-3 fs-md-1">Patient Intake Form</h1>
+          {currentStep >= 2 && searchStatus === 'found' && (healthieFirstName || healthieLastName) && (
+            <div className="text-muted" style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>
+              {healthieFirstName} {healthieLastName}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Test Mode Toggle */}
@@ -2026,8 +2387,19 @@ const IntakeForm = () => {
         </div>
 
         {/* Progress Indicator */}
-        <div className="alert alert-info mb-3">
-          <strong>Step {currentStep} of {totalSteps}:</strong> {getSectionTitle()}
+        <div className="alert alert-info mb-3 d-flex justify-content-between align-items-center">
+          <div>
+            <strong>Step {currentStep} of {totalSteps}:</strong> {getSectionTitle()}
+          </div>
+          {searchStatus === 'found' && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-danger"
+              onClick={clearAndStartOver}
+            >
+              Clear & Start Over
+            </button>
+          )}
         </div>
 
         {/* Patient Search on step 1 */}
@@ -2129,6 +2501,42 @@ const IntakeForm = () => {
                 </div>
               )}
 
+              {/* Completed Intake Blocking Message */}
+              {hasCompletedIntake && completedIntakeInfo && (
+                <div className="alert alert-warning" role="alert">
+                  <h4 className="alert-heading">✓ Your intake form is already completed</h4>
+                  <hr />
+                  <p className="mb-2">
+                    <strong>Submission Date:</strong> {new Date(completedIntakeInfo.submitted_at).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </p>
+                  <p className="mb-0">
+                    You cannot submit another intake form as your intake has already been completed and processed.
+                    If you need to update your information, please contact our office.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-warning mt-3"
+                    onClick={() => {
+                      setSearchStatus(null);
+                      setPatientId(DEFAULT_PATIENT_ID);
+                      setSearchFirstName('');
+                      setSearchLastName('');
+                      setSearchDOB('');
+                      setHasCompletedIntake(false);
+                      setCompletedIntakeInfo(null);
+                    }}
+                  >
+                    Search Another Account
+                  </button>
+                </div>
+              )}
+
               {/* Multiple Matches - Let User Select */}
               {searchStatus === 'multiple' && searchedPatients.length > 1 && (
                 <div className="alert alert-info" role="alert">
@@ -2188,19 +2596,22 @@ const IntakeForm = () => {
           </div>
         )}
 
-        {/* Step 6 disclaimer links */}
-        {currentStep === 6 && (
-          <div className="alert alert-info mb-4" role="contentinfo">
-            <p>By signing this form you agree to the following:</p>
-            <p><a href="https://www.override.health/healthie-privacy-policy" target="_blank" rel="noopener noreferrer">Notice of Privacy Policy</a></p>
-            <p><a href="https://www.override.health/informed-treatment-consent" target="_blank" rel="noopener noreferrer">Informed Treatment Consent</a></p>
-            <p><a href="https://www.override.health/clinical-policies-procedures" target="_blank" rel="noopener noreferrer">Clinical Policies & Procedures</a></p>
-          </div>
-        )}
+        {/* Only show form if no completed intake exists */}
+        {!hasCompletedIntake && (
+          <>
+            {/* Step 6 disclaimer links */}
+            {currentStep === 6 && (
+              <div className="alert alert-info mb-4" role="contentinfo">
+                <p>By signing this form you agree to the following:</p>
+                <p><a href="https://www.override.health/healthie-privacy-policy" target="_blank" rel="noopener noreferrer">Notice of Privacy Policy</a></p>
+                <p><a href="https://www.override.health/informed-treatment-consent" target="_blank" rel="noopener noreferrer">Informed Treatment Consent</a></p>
+                <p><a href="https://www.override.health/clinical-policies-procedures" target="_blank" rel="noopener noreferrer">Clinical Policies & Procedures</a></p>
+              </div>
+            )}
 
-        {/* Form Fields */}
-        <div className="card">
-          <div className="card-body">
+            {/* Form Fields */}
+            <div className="card">
+              <div className="card-body">
             {getModulesForCurrentStep().map((module, index) => {
               // ========================================================================
               // WARNING: QUESTION NUMBERING IS COMPLEX - READ QUESTION_NUMBERING.md
@@ -2335,37 +2746,42 @@ const IntakeForm = () => {
 
               return fields;
             })}
-          </div>
-        </div>
+              </div>
+            </div>
 
-        {/* Navigation Buttons */}
-        <div className="mt-4 mb-5 d-flex justify-content-between">
-          <div>
-            {currentStep > 1 && (
-              <button type="button" className="btn btn-secondary" onClick={previousStep}>
-                &larr; Previous
-              </button>
-            )}
-          </div>
-          <div>
-            {currentStep < totalSteps ? (
-              <button type="button" className="btn btn-primary" onClick={nextStep}>
-                Next &rarr;
-              </button>
-            ) : (
-              <button type="submit" className="btn btn-primary btn-lg" disabled={submitting}>
-                {submitting ? (
-                  <>
-                    <span className="spinner-border spinner-border-sm me-2" role="status" />
-                    <span>Submitting...</span>
-                  </>
-                ) : (
-                  <span>Submit Form</span>
+            {/* Navigation Buttons */}
+            <div className="mt-4 mb-5 d-flex justify-content-between">
+              <div>
+                {currentStep > 1 && (
+                  <button type="button" className="btn btn-secondary" onClick={previousStep}>
+                    &larr; Previous
+                  </button>
                 )}
-              </button>
-            )}
-          </div>
-        </div>
+              </div>
+              <div>
+                {currentStep < totalSteps ? (
+                  // Only show Next button on Step 1 if patient has been found via search
+                  (currentStep === 1 && searchStatus !== 'found') ? null : (
+                    <button type="button" className="btn btn-primary" onClick={nextStep}>
+                      Next &rarr;
+                    </button>
+                  )
+                ) : (
+                  <button type="submit" className="btn btn-primary btn-lg" disabled={submitting}>
+                    {submitting ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" role="status" />
+                        <span>Submitting...</span>
+                      </>
+                    ) : (
+                      <span>Submit Form</span>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </form>
 
       {/* Success/Error Messages */}

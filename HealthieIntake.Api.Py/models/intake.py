@@ -29,10 +29,10 @@ class IntakeSubmission(BaseModel):
 
     # Core Patient Info (validated)
     patient_healthie_id: str = Field(..., description="Healthie patient ID")
-    first_name: str = Field(..., min_length=1, max_length=100, description="Patient first name")
-    last_name: str = Field(..., min_length=1, max_length=100, description="Patient last name")
-    date_of_birth: str = Field(..., description="Patient date of birth (YYYY-MM-DD)")
-    email: EmailStr = Field(..., description="Patient email address")
+    first_name: str = Field(default="", max_length=100, description="Patient first name")
+    last_name: str = Field(default="", max_length=100, description="Patient last name")
+    date_of_birth: str = Field(default="", description="Patient date of birth (YYYY-MM-DD)")
+    email: str = Field(default="", description="Patient email address")
     phone: Optional[str] = Field(None, max_length=20, description="Patient phone number")
 
     # Flexible form data (everything else)
