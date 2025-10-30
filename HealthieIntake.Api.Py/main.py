@@ -10,7 +10,7 @@ from typing import List, Dict, Any
 import logging
 
 from config import settings
-from models import Patient, CustomModuleForm, FormAnswerGroupInput, IntakeSubmission
+from models import Patient, PatientSearchRequest, CustomModuleForm, FormAnswerGroupInput, IntakeSubmission
 from services import HealthieApiClient
 from repositories import IntakeRepository
 from database import get_session, init_db
@@ -77,6 +77,25 @@ async def get_patient(patient_id: str):
         return patient
     except Exception as e:
         logger.error(f"Error fetching patient {patient_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/healthie/patients/search", response_model=List[Patient])
+async def search_patients(request: PatientSearchRequest):
+    """
+    Search for patients by name and date of birth
+
+    Returns list of matching patients from Healthie.
+    """
+    try:
+        patients = await healthie_client.search_patients_async(
+            first_name=request.first_name,
+            last_name=request.last_name,
+            dob=request.dob
+        )
+        return patients
+    except Exception as e:
+        logger.error(f"Error searching patients: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

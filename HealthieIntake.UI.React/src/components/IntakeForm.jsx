@@ -15,6 +15,14 @@ const IntakeForm = () => {
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
 
+  // Patient search state
+  const [searchFirstName, setSearchFirstName] = useState('');
+  const [searchLastName, setSearchLastName] = useState('');
+  const [searchDOB, setSearchDOB] = useState('');
+  const [searchStatus, setSearchStatus] = useState(null); // null, 'searching', 'found', 'not_found', 'multiple', 'error'
+  const [searchedPatients, setSearchedPatients] = useState([]);
+  const [searchErrorMessage, setSearchErrorMessage] = useState(null);
+
   // Date fields - separate month, day, year
   const [dateMonths, setDateMonths] = useState({});
   const [dateDays, setDateDays] = useState({});
@@ -157,6 +165,53 @@ const IntakeForm = () => {
       setErrorMessage(`Error loading form: ${error.message}`);
       setLoading(false);
     }
+  };
+
+  const searchPatient = async () => {
+    // Reset previous search results
+    setSearchStatus('searching');
+    setSearchErrorMessage(null);
+    setSearchedPatients([]);
+
+    // Validate inputs
+    if (!searchFirstName.trim() || !searchLastName.trim() || !searchDOB.trim()) {
+      setSearchStatus('error');
+      setSearchErrorMessage('Please fill in all fields (First Name, Last Name, and Date of Birth)');
+      return;
+    }
+
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/healthie/patients/search`, {
+        firstName: searchFirstName.trim(),
+        lastName: searchLastName.trim(),
+        dob: searchDOB.trim()
+      });
+
+      const patients = response.data;
+
+      if (patients.length === 0) {
+        setSearchStatus('not_found');
+        setSearchErrorMessage('No account found. Please verify your information or contact support.');
+      } else if (patients.length === 1) {
+        // Single match - automatically set patient ID
+        setPatientId(patients[0].id);
+        setSearchStatus('found');
+        setSearchedPatients(patients);
+      } else {
+        // Multiple matches - let user select
+        setSearchStatus('multiple');
+        setSearchedPatients(patients);
+      }
+    } catch (error) {
+      setSearchStatus('error');
+      setSearchErrorMessage(`Error searching for patient: ${error.message}`);
+    }
+  };
+
+  const selectPatient = (patient) => {
+    setPatientId(patient.id);
+    setSearchStatus('found');
+    setSearchedPatients([patient]);
   };
 
   const shouldHaveCheckboxGroup = (module) => {
@@ -1975,24 +2030,160 @@ const IntakeForm = () => {
           <strong>Step {currentStep} of {totalSteps}:</strong> {getSectionTitle()}
         </div>
 
-        {/* Patient ID field on step 1 */}
+        {/* Patient Search on step 1 */}
         {currentStep === 1 && (
           <div className="card mb-3">
             <div className="card-body">
-              <div className="mb-3">
-                <label htmlFor="patientId" className="form-label">
-                  Patient Healthie ID <span className="text-danger">*</span>
-                </label>
-                <input
-                  type="text"
-                  className="form-control"
-                  id="patientId"
-                  value={patientId}
-                  onChange={(e) => setPatientId(e.target.value)}
-                  required
-                />
-                <div className="form-text">Enter the Healthie patient ID for this form submission</div>
-              </div>
+              <h5 className="card-title mb-3">Find Your Account</h5>
+              <p className="text-muted mb-4">Please enter your information to locate your patient account</p>
+
+              {/* Search Form */}
+              {searchStatus !== 'found' && (
+                <>
+                  <div className="mb-3">
+                    <label htmlFor="searchFirstName" className="form-label">
+                      First Name <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      id="searchFirstName"
+                      value={searchFirstName}
+                      onChange={(e) => setSearchFirstName(e.target.value)}
+                      placeholder="Enter your first name"
+                      disabled={searchStatus === 'searching'}
+                    />
+                  </div>
+
+                  <div className="mb-3">
+                    <label htmlFor="searchLastName" className="form-label">
+                      Last Name <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      id="searchLastName"
+                      value={searchLastName}
+                      onChange={(e) => setSearchLastName(e.target.value)}
+                      placeholder="Enter your last name"
+                      disabled={searchStatus === 'searching'}
+                    />
+                  </div>
+
+                  <div className="mb-3">
+                    <label htmlFor="searchDOB" className="form-label">
+                      Date of Birth <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      id="searchDOB"
+                      value={searchDOB}
+                      onChange={(e) => setSearchDOB(e.target.value)}
+                      placeholder="YYYY-MM-DD"
+                      disabled={searchStatus === 'searching'}
+                    />
+                    <div className="form-text">Please enter your date of birth in the format shown</div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={searchPatient}
+                    disabled={searchStatus === 'searching'}
+                  >
+                    {searchStatus === 'searching' ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Searching...
+                      </>
+                    ) : (
+                      'Find My Account'
+                    )}
+                  </button>
+                </>
+              )}
+
+              {/* Success Message - Single Match */}
+              {searchStatus === 'found' && searchedPatients.length === 1 && (
+                <div className="alert alert-success" role="alert">
+                  <strong>✓ Account Found!</strong>
+                  <div className="mt-2">
+                    <strong>Name:</strong> {searchedPatients[0].firstName} {searchedPatients[0].lastName}<br/>
+                    <strong>Email:</strong> {searchedPatients[0].email}<br/>
+                    <strong>Patient ID:</strong> {searchedPatients[0].id}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary mt-3"
+                    onClick={() => {
+                      setSearchStatus(null);
+                      setPatientId(DEFAULT_PATIENT_ID);
+                      setSearchFirstName('');
+                      setSearchLastName('');
+                      setSearchDOB('');
+                    }}
+                  >
+                    Search Again
+                  </button>
+                </div>
+              )}
+
+              {/* Multiple Matches - Let User Select */}
+              {searchStatus === 'multiple' && searchedPatients.length > 1 && (
+                <div className="alert alert-info" role="alert">
+                  <strong>Multiple accounts found.</strong> Please select your account:
+                  <div className="mt-3">
+                    {searchedPatients.map((patient, index) => (
+                      <div key={patient.id} className="card mb-2">
+                        <div className="card-body p-3">
+                          <div>
+                            <strong>{patient.firstName} {patient.lastName}</strong><br/>
+                            <small>Email: {patient.email}</small><br/>
+                            <small>ID: {patient.id}</small>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-primary mt-2"
+                            onClick={() => selectPatient(patient)}
+                          >
+                            Select This Account
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary mt-2"
+                    onClick={() => {
+                      setSearchStatus(null);
+                      setPatientId(DEFAULT_PATIENT_ID);
+                    }}
+                  >
+                    Search Again
+                  </button>
+                </div>
+              )}
+
+              {/* Error Messages */}
+              {(searchStatus === 'not_found' || searchStatus === 'error') && searchErrorMessage && (
+                <div className="alert alert-danger mt-3" role="alert">
+                  <strong>Error:</strong> {searchErrorMessage}
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-danger"
+                      onClick={() => {
+                        setSearchStatus(null);
+                        setSearchErrorMessage(null);
+                      }}
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

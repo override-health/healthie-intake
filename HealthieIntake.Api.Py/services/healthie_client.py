@@ -68,6 +68,64 @@ class HealthieApiClient:
         except Exception as e:
             raise Exception(f"Error fetching patient: {str(e)}")
 
+    async def search_patients_async(self, first_name: str, last_name: str, dob: str) -> List[Patient]:
+        """
+        Search for patients by name and date of birth
+
+        Args:
+            first_name: Patient first name
+            last_name: Patient last name
+            dob: Date of birth in YYYY-MM-DD format
+
+        Returns:
+            List of matching Patient objects
+        """
+        # Construct search keywords from name
+        keywords = f"{first_name} {last_name}".strip()
+
+        query = gql("""
+            query($keywords: String!) {
+                users(should_paginate: false, keywords: $keywords) {
+                    id
+                    email
+                    first_name
+                    last_name
+                    dob
+                }
+            }
+        """)
+
+        try:
+            result = self.client.execute(query, variable_values={"keywords": keywords})
+            users_data = result.get('users', [])
+
+            # Filter by DOB if provided
+            matching_patients = []
+            for user_data in users_data:
+                user_dob = user_data.get('dob')
+
+                # If DOB matches or no DOB filter provided, include the patient
+                if dob and user_dob:
+                    if user_dob == dob:
+                        matching_patients.append(Patient(
+                            id=user_data.get('id', ''),
+                            email=user_data.get('email', ''),
+                            first_name=user_data.get('first_name', ''),
+                            last_name=user_data.get('last_name', '')
+                        ))
+                elif not dob:
+                    # No DOB filter, include all name matches
+                    matching_patients.append(Patient(
+                        id=user_data.get('id', ''),
+                        email=user_data.get('email', ''),
+                        first_name=user_data.get('first_name', ''),
+                        last_name=user_data.get('last_name', '')
+                    ))
+
+            return matching_patients
+        except Exception as e:
+            raise Exception(f"Error searching patients: {str(e)}")
+
     async def get_custom_form_async(self, form_id: str) -> Optional[CustomModuleForm]:
         """
         Get custom form structure by ID
