@@ -53,6 +53,32 @@ function AdminDashboard() {
     }
   };
 
+  const handleDeleteIntake = async (intake, e) => {
+    e.stopPropagation();
+
+    // Confirmation dialog
+    const patientName = `${intake.first_name} ${intake.last_name}`;
+    const confirmMessage = `Are you sure you want to delete the intake form for ${patientName}?\n\nThis action cannot be undone.`;
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      await axios.delete(`${API_BASE_URL}/api/intake/${intake.id}`);
+
+      // Refresh the list after successful deletion
+      await fetchIntakes();
+
+      // Show success message
+      alert(`Intake form for ${patientName} has been deleted successfully.`);
+    } catch (err) {
+      console.error('Error deleting intake:', err);
+      setError('Failed to delete intake form');
+      alert('Failed to delete intake form. Please try again.');
+    }
+  };
+
   // Filter intakes based on search and status
   const filteredIntakes = intakes.filter(intake => {
     const matchesSearch =
@@ -219,15 +245,24 @@ function AdminDashboard() {
                             }
                           </td>
                           <td>
-                            <button
-                              className="btn btn-sm btn-outline-primary"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleViewIntake(intake);
-                              }}
-                            >
-                              View
-                            </button>
+                            <div className="d-flex gap-2">
+                              <button
+                                className="btn btn-sm btn-outline-primary"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewIntake(intake);
+                                }}
+                              >
+                                View
+                              </button>
+                              <button
+                                className="btn btn-sm btn-outline-danger"
+                                onClick={(e) => handleDeleteIntake(intake, e)}
+                                title="Delete this intake form"
+                              >
+                                Delete
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))

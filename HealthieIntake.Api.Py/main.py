@@ -461,6 +461,52 @@ async def get_patient_intakes(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/api/intake/{intake_id}")
+async def delete_intake(
+    intake_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Delete an intake by ID (works for both drafts and completed intakes)
+
+    Used by admin dashboard to remove intake records.
+    """
+    try:
+        from sqlalchemy import delete
+        from models.database import IntakeRecord
+        from uuid import UUID
+
+        # Validate UUID format
+        try:
+            intake_uuid = UUID(intake_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid intake ID format")
+
+        # Delete the intake
+        result = await session.execute(
+            delete(IntakeRecord)
+            .where(IntakeRecord.id == intake_uuid)
+        )
+        await session.commit()
+
+        deleted_count = result.rowcount
+
+        if deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Intake not found")
+
+        logger.info(f"Deleted intake {intake_id}")
+
+        return {
+            "success": True,
+            "message": "Intake deleted successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting intake {intake_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/health")
 async def health_check(session: AsyncSession = Depends(get_session)):
     """
