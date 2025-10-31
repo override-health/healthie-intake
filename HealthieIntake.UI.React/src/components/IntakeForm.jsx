@@ -77,7 +77,15 @@ const IntakeForm = () => {
 
   // Medications list (custom field - replaces textarea with structured input)
   const [medications, setMedications] = useState([]);
-  // Each medication: { id: uniqueId, drugName: '', dosage: '', directions: '' }
+  // Each medication: { id: uniqueId, drugName: '', dosage: '', startDate: '', directions: '' }
+
+  // Medication autocomplete state (openFDA API)
+  const [medicationSuggestions, setMedicationSuggestions] = useState({});
+  const [showSuggestions, setShowSuggestions] = useState({});
+  const [loadingSuggestions, setLoadingSuggestions] = useState({});
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState({}); // For keyboard navigation
+  const [searchCache, setSearchCache] = useState({}); // Cache API results
+  const [recentSelections, setRecentSelections] = useState([]); // Track recently selected meds
 
   // Test mode - bypass validation
   const [testMode, setTestMode] = useState(false);
@@ -560,6 +568,185 @@ const IntakeForm = () => {
       med.id === id ? { ...med, [field]: value } : med
     ));
   };
+
+  // Debounce utility for openFDA API calls
+  const debounceTimers = useRef({});
+  const debounce = (func, delay, id) => {
+    return (...args) => {
+      if (debounceTimers.current[id]) {
+        clearTimeout(debounceTimers.current[id]);
+      }
+      debounceTimers.current[id] = setTimeout(() => {
+        func(...args);
+      }, delay);
+    };
+  };
+
+  // Search openFDA for medication suggestions
+  const searchMedications = async (query, medicationId) => {
+    if (query.length < 3) {
+      setShowSuggestions({ ...showSuggestions, [medicationId]: false });
+      setSelectedSuggestionIndex({ ...selectedSuggestionIndex, [medicationId]: -1 });
+      return;
+    }
+
+    // Check cache first
+    const cacheKey = query.toLowerCase();
+    if (searchCache[cacheKey]) {
+      setMedicationSuggestions({
+        ...medicationSuggestions,
+        [medicationId]: searchCache[cacheKey]
+      });
+      setShowSuggestions({ ...showSuggestions, [medicationId]: true });
+      setSelectedSuggestionIndex({ ...selectedSuggestionIndex, [medicationId]: -1 });
+      return;
+    }
+
+    setLoadingSuggestions({ ...loadingSuggestions, [medicationId]: true });
+
+    try {
+      const API_KEY = '3yhXgt8QD6o3VEHPgTt38HALhJ8TZVnPquQpKDRa';
+
+      // Search both brand_name and generic_name in openFDA Drug Product (NDC) endpoint
+      // Use wildcard (*) for prefix matching: brand_name:query* OR generic_name:query*
+      const searchQuery = `(brand_name:${query}* OR generic_name:${query}*)`;
+      const url = `https://api.fda.gov/drug/ndc.json?search=${encodeURIComponent(searchQuery)}&limit=10&api_key=${API_KEY}`;
+
+      const response = await axios.get(url);
+
+      if (response.data && response.data.results) {
+        // Extract unique drug names (prefer brand name, fallback to generic)
+        const suggestions = response.data.results
+          .map(result => {
+            // Prefer brand_name, fallback to generic_name
+            const name = result.brand_name || result.generic_name || '';
+            // Some results have arrays, get first element
+            return Array.isArray(name) ? name[0] : name;
+          })
+          .filter(name => name) // Remove empty strings
+          .filter((name, index, self) => self.indexOf(name) === index) // Unique values
+          .slice(0, 10); // Limit to 10
+
+        // Cache the results
+        setSearchCache({
+          ...searchCache,
+          [cacheKey]: suggestions
+        });
+
+        setMedicationSuggestions({
+          ...medicationSuggestions,
+          [medicationId]: suggestions
+        });
+        setShowSuggestions({ ...showSuggestions, [medicationId]: true });
+        setSelectedSuggestionIndex({ ...selectedSuggestionIndex, [medicationId]: -1 });
+      } else {
+        setShowSuggestions({ ...showSuggestions, [medicationId]: false });
+      }
+    } catch (error) {
+      console.log('Error fetching medication suggestions:', error);
+      setShowSuggestions({ ...showSuggestions, [medicationId]: false });
+    } finally {
+      setLoadingSuggestions({ ...loadingSuggestions, [medicationId]: false });
+    }
+  };
+
+  // Handle drug name change with autocomplete
+  const handleDrugNameChange = (id, value) => {
+    updateMedication(id, 'drugName', value);
+
+    // Debounced search
+    const debouncedSearch = debounce(searchMedications, 300, id);
+    debouncedSearch(value, id);
+  };
+
+  // Select a suggestion from autocomplete
+  const selectSuggestion = (medicationId, suggestion) => {
+    updateMedication(medicationId, 'drugName', suggestion);
+    setShowSuggestions({ ...showSuggestions, [medicationId]: false });
+    setSelectedSuggestionIndex({ ...selectedSuggestionIndex, [medicationId]: -1 });
+
+    // Track recently selected medications (keep last 10 unique)
+    setRecentSelections(prev => {
+      const filtered = prev.filter(item => item !== suggestion);
+      return [suggestion, ...filtered].slice(0, 10);
+    });
+  };
+
+  // Clear drug name field
+  const clearDrugName = (medicationId) => {
+    updateMedication(medicationId, 'drugName', '');
+    setShowSuggestions({ ...showSuggestions, [medicationId]: false });
+    setSelectedSuggestionIndex({ ...selectedSuggestionIndex, [medicationId]: -1 });
+  };
+
+  // Handle keyboard navigation in autocomplete
+  const handleKeyDown = (e, medicationId) => {
+    const suggestions = medicationSuggestions[medicationId] || [];
+    const currentIndex = selectedSuggestionIndex[medicationId] ?? -1;
+    const isOpen = showSuggestions[medicationId];
+
+    if (!isOpen || suggestions.length === 0) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        const nextIndex = currentIndex < suggestions.length - 1 ? currentIndex + 1 : 0;
+        setSelectedSuggestionIndex({ ...selectedSuggestionIndex, [medicationId]: nextIndex });
+        break;
+
+      case 'ArrowUp':
+        e.preventDefault();
+        const prevIndex = currentIndex > 0 ? currentIndex - 1 : suggestions.length - 1;
+        setSelectedSuggestionIndex({ ...selectedSuggestionIndex, [medicationId]: prevIndex });
+        break;
+
+      case 'Enter':
+        e.preventDefault();
+        if (currentIndex >= 0 && currentIndex < suggestions.length) {
+          selectSuggestion(medicationId, suggestions[currentIndex]);
+        }
+        break;
+
+      case 'Escape':
+        e.preventDefault();
+        setShowSuggestions({ ...showSuggestions, [medicationId]: false });
+        setSelectedSuggestionIndex({ ...selectedSuggestionIndex, [medicationId]: -1 });
+        break;
+
+      default:
+        break;
+    }
+  };
+
+  // Highlight matching text in suggestions
+  const highlightMatch = (text, query) => {
+    if (!query || query.length < 3) return text;
+
+    const regex = new RegExp(`(${query})`, 'gi');
+    const parts = text.split(regex);
+
+    return parts.map((part, index) =>
+      regex.test(part) ?
+        <strong key={index} style={{ fontWeight: 'bold', color: '#0066cc' }}>{part}</strong> :
+        part
+    );
+  };
+
+  // Close autocomplete dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Check if click is outside all autocomplete dropdowns
+      const isOutside = !event.target.closest('.medication-autocomplete-wrapper');
+      if (isOutside) {
+        setShowSuggestions({});
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const loadMostRecentDraft = async (healthieId) => {
     // Get both localStorage and DB drafts
@@ -1775,18 +1962,161 @@ const IntakeForm = () => {
           {/* Medications list */}
           {medications.length > 0 && (
             <div>
+              <style>{`
+                @media (min-width: 768px) {
+                  .med-field-drugname { flex: 0 0 35% !important; max-width: 35% !important; }
+                  .med-field-dosage { flex: 0 0 11.67% !important; max-width: 11.67% !important; }
+                  .med-field-startdate { flex: 0 0 15% !important; max-width: 15% !important; }
+                  .med-field-directions { flex: 0 0 30% !important; max-width: 30% !important; }
+                  .med-field-remove { flex: 0 0 8.33% !important; max-width: 8.33% !important; }
+                  .medication-header { display: flex !important; }
+                  .mobile-field-label { display: none !important; }
+                }
+                @media (max-width: 767px) {
+                  .medication-header { display: none !important; }
+                  .mobile-field-label { display: block !important; }
+                }
+              `}</style>
+              {/* Column headers (desktop only) */}
+              <div className="row mb-2 medication-header" style={{ display: 'none' }}>
+                <div className="med-field-drugname">
+                  <small className="text-muted" style={{ fontWeight: '600', fontSize: '0.75rem' }}>Drug Name</small>
+                </div>
+                <div className="med-field-dosage">
+                  <small className="text-muted" style={{ fontWeight: '600', fontSize: '0.75rem' }}>Dosage</small>
+                </div>
+                <div className="med-field-startdate">
+                  <small className="text-muted" style={{ fontWeight: '600', fontSize: '0.75rem' }}>Start Date</small>
+                </div>
+                <div className="med-field-directions">
+                  <small className="text-muted" style={{ fontWeight: '600', fontSize: '0.75rem' }}>Directions</small>
+                </div>
+                <div className="med-field-remove">
+                  <small className="text-muted" style={{ fontWeight: '600', fontSize: '0.75rem' }}></small>
+                </div>
+              </div>
               {medications.map((med, index) => (
                 <div key={med.id} className="row mb-3 align-items-center">
-                  <div className="col-12 col-md-3 mb-2 mb-md-0">
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder="Drug Name *"
-                      value={med.drugName}
-                      onChange={(e) => updateMedication(med.id, 'drugName', e.target.value)}
-                    />
+                  <div className="col-12 mb-2 mb-md-0 medication-autocomplete-wrapper med-field-drugname" style={{ position: 'relative' }}>
+                    <label className="mobile-field-label" style={{ display: 'none', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.25rem', color: '#495057' }}>
+                      Drug Name *
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Drug Name *"
+                        value={med.drugName}
+                        onChange={(e) => handleDrugNameChange(med.id, e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, med.id)}
+                        onFocus={() => {
+                          // Show suggestions if already searched
+                          if (med.drugName.length >= 3 && medicationSuggestions[med.id]?.length > 0) {
+                            setShowSuggestions({ ...showSuggestions, [med.id]: true });
+                          }
+                          // Show recent selections if field is empty
+                          else if (med.drugName.length === 0 && recentSelections.length > 0) {
+                            setMedicationSuggestions({ ...medicationSuggestions, [med.id]: recentSelections });
+                            setShowSuggestions({ ...showSuggestions, [med.id]: true });
+                            setSelectedSuggestionIndex({ ...selectedSuggestionIndex, [med.id]: -1 });
+                          }
+                        }}
+                        style={{ paddingRight: med.drugName ? '30px' : '12px' }}
+                      />
+                      {/* Clear button (X) */}
+                      {med.drugName && (
+                        <button
+                          type="button"
+                          onClick={() => clearDrugName(med.id)}
+                          style={{
+                            position: 'absolute',
+                            right: '8px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            border: 'none',
+                            background: 'transparent',
+                            cursor: 'pointer',
+                            color: '#6c757d',
+                            fontSize: '18px',
+                            padding: '0',
+                            lineHeight: '1',
+                            width: '20px',
+                            height: '20px'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = '#dc3545'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = '#6c757d'}
+                          title="Clear"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                    {/* Autocomplete dropdown */}
+                    {showSuggestions[med.id] && medicationSuggestions[med.id]?.length > 0 && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          backgroundColor: 'white',
+                          border: '1px solid #ced4da',
+                          borderRadius: '0.25rem',
+                          marginTop: '2px',
+                          maxHeight: '200px',
+                          overflowY: 'auto',
+                          zIndex: 1000,
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                        }}
+                      >
+                        {/* Header for recent selections */}
+                        {med.drugName.length === 0 && recentSelections.length > 0 && (
+                          <div style={{
+                            padding: '6px 12px',
+                            fontSize: '0.75rem',
+                            color: '#6c757d',
+                            borderBottom: '1px solid #e9ecef',
+                            backgroundColor: '#f8f9fa'
+                          }}>
+                            Recently Selected
+                          </div>
+                        )}
+                        {medicationSuggestions[med.id].map((suggestion, idx) => {
+                          const isSelected = idx === (selectedSuggestionIndex[med.id] ?? -1);
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => selectSuggestion(med.id, suggestion)}
+                              style={{
+                                padding: '8px 12px',
+                                cursor: 'pointer',
+                                borderBottom: idx < medicationSuggestions[med.id].length - 1 ? '1px solid #f0f0f0' : 'none',
+                                backgroundColor: isSelected ? '#e7f3ff' : 'white'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isSelected) e.currentTarget.style.backgroundColor = '#f8f9fa';
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isSelected) e.currentTarget.style.backgroundColor = 'white';
+                              }}
+                            >
+                              {highlightMatch(suggestion, med.drugName)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {/* Loading indicator */}
+                    {loadingSuggestions[med.id] && (
+                      <small className="text-muted" style={{ fontSize: '0.75rem' }}>
+                        Searching medications...
+                      </small>
+                    )}
                   </div>
-                  <div className="col-12 col-md-2 mb-2 mb-md-0">
+                  <div className="col-12 mb-2 mb-md-0 med-field-dosage">
+                    <label className="mobile-field-label" style={{ display: 'none', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.25rem', color: '#495057' }}>
+                      Dosage
+                    </label>
                     <input
                       type="text"
                       className="form-control"
@@ -1795,7 +2125,10 @@ const IntakeForm = () => {
                       onChange={(e) => updateMedication(med.id, 'dosage', e.target.value)}
                     />
                   </div>
-                  <div className="col-12 col-md-2 mb-2 mb-md-0">
+                  <div className="col-12 mb-2 mb-md-0 med-field-startdate">
+                    <label className="mobile-field-label" style={{ display: 'none', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.25rem', color: '#495057' }}>
+                      Start Date
+                    </label>
                     <input
                       type="date"
                       className="form-control"
@@ -1804,7 +2137,10 @@ const IntakeForm = () => {
                       onChange={(e) => updateMedication(med.id, 'startDate', e.target.value)}
                     />
                   </div>
-                  <div className="col-12 col-md-4 mb-2 mb-md-0">
+                  <div className="col-12 mb-2 mb-md-0 med-field-directions">
+                    <label className="mobile-field-label" style={{ display: 'none', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.25rem', color: '#495057' }}>
+                      Directions
+                    </label>
                     <input
                       type="text"
                       className="form-control"
@@ -1813,7 +2149,7 @@ const IntakeForm = () => {
                       onChange={(e) => updateMedication(med.id, 'directions', e.target.value)}
                     />
                   </div>
-                  <div className="col-12 col-md-1 text-center">
+                  <div className="col-12 text-center med-field-remove">
                     <button
                       type="button"
                       className="btn btn-sm btn-outline-danger"
@@ -2572,7 +2908,7 @@ const IntakeForm = () => {
           <div>
             <strong>Step {currentStep} of {totalSteps}:</strong> {getSectionTitle()}
           </div>
-          {searchStatus === 'found' && (
+          {patientId && (
             <button
               type="button"
               className="btn btn-sm btn-outline-danger"
