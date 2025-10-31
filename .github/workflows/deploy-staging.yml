@@ -41,6 +41,7 @@ jobs:
         working-directory: ./HealthieIntake.UI.React
         env:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+          VITE_API_BASE_URL: https://onboarding-staging.override.health
         run: |
           npm ci
           npm run build

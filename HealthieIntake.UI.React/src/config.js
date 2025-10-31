@@ -1,10 +1,10 @@
 // API Configuration
-export const API_BASE_URL = 'http://localhost:5096';  // Python FastAPI
+// Use environment variable if available, otherwise default to localhost for development
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5096';
 
 // Healthie Form Configuration
 export const PATIENT_ID = '3642270';
 export const FORM_ID = '2215494';
 
 // Mapbox Configuration
-// Note: You'll need to add your Mapbox token here
-export const MAPBOX_ACCESS_TOKEN = 'YOUR_MAPBOX_TOKEN_HERE';
+export const MAPBOX_ACCESS_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'YOUR_MAPBOX_TOKEN_HERE';
