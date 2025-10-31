@@ -102,7 +102,26 @@
 *(To be defined)*
 
 ### Architecture
-*(To be defined)*
+**Decision:** EC2 + nginx + Python FastAPI + React (similar to provider credentialing)
+
+**Two-Environment Setup:**
+- **Production:** `onboarding.override.health`
+- **Staging:** `onboarding-staging.override.health`
+
+**Architecture Pattern:**
+```
+User → Route53 DNS → EC2 (nginx) → FastAPI → RDS PostgreSQL
+                    ↓
+                Static React files
+```
+
+**Stack per environment:**
+- **Web Server:** nginx (reverse proxy + static file serving)
+- **SSL:** Let's Encrypt (auto-renewal via Certbot)
+- **Application:** Python FastAPI (Uvicorn)
+- **Process Manager:** PM2 or systemd
+- **Frontend:** React (compiled static files)
+- **Database:** Existing RDS PostgreSQL (separate databases)
 
 ### Infrastructure Components
 
@@ -137,8 +156,40 @@
 3. Grant permissions to `override` user (already master user)
 4. Update FastAPI `.env` with new database connection strings
 
-**Compute & Web Server:**
-*(To be defined)*
+**Compute & Web Server: Two EC2 Instances** ✅
+
+**Production EC2:**
+- URL: `onboarding.override.health`
+- Instance Type: t3.small (2 vCPU, 2GB RAM) - recommended
+- OS: Amazon Linux 2023
+- Region: us-east-2 (Ohio)
+- Security Groups: SSH (22), HTTP (80), HTTPS (443)
+- Elastic IP: To be allocated
+- SSL: Let's Encrypt certificate
+
+**Staging EC2:**
+- URL: `onboarding-staging.override.health`
+- Instance Type: t3.micro (2 vCPU, 1GB RAM) - cost savings
+- OS: Amazon Linux 2023
+- Region: us-east-2 (Ohio)
+- Security Groups: SSH (22), HTTP (80), HTTPS (443)
+- Elastic IP: To be allocated
+- SSL: Let's Encrypt certificate
+
+**Software Stack (both instances):**
+- nginx 1.28.x
+- Python 3.11+
+- FastAPI + Uvicorn
+- PM2 or systemd (process management)
+- Certbot (SSL certificate management)
+- Node.js 18+ (for building React app)
+
+**Estimated Costs:**
+- Production EC2 t3.small: ~$15/month
+- Staging EC2 t3.micro: ~$8/month
+- Total EC2 cost: ~$23/month
+- RDS: No additional cost (using existing instances)
+- **Total infrastructure: ~$23/month**
 
 ### CI/CD Pipeline
 **Decision:** GitHub Actions (can switch to CircleCI later if needed)
@@ -169,11 +220,38 @@
 - `DATABASE_URL`
 - Other environment-specific secrets
 
+**DNS & SSL Configuration:**
+
+**Route53 DNS Records (to be created):**
+- `onboarding.override.health` → Production Elastic IP (A record)
+- `onboarding-staging.override.health` → Staging Elastic IP (A record)
+
+**SSL Certificates:**
+- Production: Let's Encrypt for `onboarding.override.health`
+- Staging: Let's Encrypt for `onboarding-staging.override.health`
+- Auto-renewal: Certbot cron job
+
 ### Deployment Process
 *(To be defined)*
 
 ### Cost Estimation
-*(To be defined)*
+
+**Monthly Costs:**
+- Production EC2 (t3.small): ~$15/month
+- Staging EC2 (t3.micro): ~$8/month
+- RDS PostgreSQL: $0 (using existing instances)
+- Elastic IPs: $0 (while attached to running instances)
+- Route53 DNS: ~$0.50/month (hosted zone already exists)
+- Data transfer: ~$1-2/month (estimated)
+
+**Total: ~$23-25/month**
+
+**One-time Costs:**
+- SSL Certificates: $0 (Let's Encrypt is free)
+- Setup: $0 (automated via scripts)
+
+**Savings vs. New Infrastructure:**
+- Saved ~$40-50/month by reusing existing RDS instances
 
 ### Timeline
 *(To be defined)*
