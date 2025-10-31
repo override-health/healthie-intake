@@ -1,7 +1,7 @@
 # Deployment Status
 
-**Last Updated:** 2025-10-31
-**Current Status:** ✅ Staging Environment LIVE at https://onboarding-staging.override.health
+**Last Updated:** 2025-10-31 (End of Day)
+**Current Status:** ✅ Staging LIVE + CI/CD Fully Operational + Delete Feature Added
 
 ---
 
@@ -32,7 +32,26 @@
 - ✅ nginx reverse proxy configured (/api → backend)
 - ✅ SSL certificate installed (expires 2026-01-29)
 - ✅ HTTP → HTTPS redirect enabled
-- ✅ Database connected (0 intakes)
+- ✅ Database connected (1 intake)
+- ✅ Environment variables properly configured for staging domain
+
+### CI/CD (GitHub Actions)
+- ✅ Test & Build workflow (runs on every push/PR)
+- ✅ Deploy to Staging workflow (auto-deploys on push to main)
+- ✅ GitHub secrets configured (STAGING_SSH_KEY, VITE_MAPBOX_TOKEN)
+- ✅ Successfully tested with 3 deployments (all successful)
+- ✅ Average deployment time: ~40-45 seconds
+
+### Features Added Today
+- ✅ Delete button on admin dashboard
+  - DELETE /api/intake/{intake_id} endpoint
+  - Confirmation dialog before deletion
+  - Works for both drafts and completed intakes
+  - Auto-refreshes list after deletion
+- ✅ Environment variable configuration
+  - VITE_API_BASE_URL for proper staging/production URLs
+  - Fixed CORS issues
+  - Maintains localhost for local development
 
 ### Code
 - ✅ Admin credentials updated: `overrideadmin` / `$Override3887`
