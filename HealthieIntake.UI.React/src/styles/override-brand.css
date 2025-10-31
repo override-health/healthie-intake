@@ -382,6 +382,15 @@ h1, h2, h3, h4, h5, h6 {
         border-radius: 12px;
     }
 
+    /* Admin Dashboard - Full width on mobile */
+    .admin-dashboard-container {
+        width: 95% !important;
+        padding: 16px !important;
+        margin-top: 16px !important;
+        margin-bottom: 16px !important;
+        border-radius: 12px !important;
+    }
+
     .signature-canvas {
         height: 150px !important;
     }
@@ -412,6 +421,12 @@ h1, h2, h3, h4, h5, h6 {
 
     .card-body {
         padding: 20px !important;
+    }
+
+    /* Admin Dashboard - Slightly narrower on tablets */
+    .admin-dashboard-container {
+        width: 90% !important;
+        padding: 24px !important;
     }
 }
 

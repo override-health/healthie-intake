@@ -389,6 +389,31 @@ async def submit_intake(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/intake/list")
+async def list_intakes(
+    limit: int = 50,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    List recent intake submissions
+
+    For testing/debugging purposes. Shows most recent intakes.
+    """
+    try:
+        repo = IntakeRepository(session)
+        intakes = await repo.find_all(limit=limit)
+        count = await repo.count()
+
+        return {
+            "total_count": count,
+            "returned_count": len(intakes),
+            "intakes": intakes
+        }
+    except Exception as e:
+        logger.error(f"Error listing intakes: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/intake/{intake_id}")
 async def get_intake(
     intake_id: str,
@@ -433,31 +458,6 @@ async def get_patient_intakes(
         }
     except Exception as e:
         logger.error(f"Error fetching intakes for {email}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/intake/list")
-async def list_intakes(
-    limit: int = 50,
-    session: AsyncSession = Depends(get_session)
-):
-    """
-    List recent intake submissions
-
-    For testing/debugging purposes. Shows most recent intakes.
-    """
-    try:
-        repo = IntakeRepository(session)
-        intakes = await repo.find_all(limit=limit)
-        count = await repo.count()
-
-        return {
-            "total_count": count,
-            "returned_count": len(intakes),
-            "intakes": intakes
-        }
-    except Exception as e:
-        logger.error(f"Error listing intakes: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
