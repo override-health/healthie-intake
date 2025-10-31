@@ -105,6 +105,39 @@
 *(To be defined)*
 
 ### Infrastructure Components
+
+**Database: Existing RDS PostgreSQL Instances** ✅
+**Decision:** Reuse existing RDS instances, add new databases (no new RDS costs)
+
+**Production Database:**
+- RDS Instance: `override-web-postgres-encrypted`
+- Type: db.t3.medium (managed PostgreSQL 13.20)
+- Endpoint: `override-web-postgres-encrypted.cfks4awdzxod.us-east-2.rds.amazonaws.com:5432`
+- New Database: `healthie_intake_production`
+- User: `override` (existing master user)
+- Storage: 5GB (shared with existing `override` database)
+
+**Staging Database:**
+- RDS Instance: `override-web-staging-postgres-encrypted`
+- Type: db.t3.micro (managed PostgreSQL 13.20)
+- Endpoint: `override-web-staging-postgres-encrypted.cfks4awdzxod.us-east-2.rds.amazonaws.com:5432`
+- New Database: `healthie_intake_staging`
+- User: `override` (existing master user)
+- Storage: 5GB (shared with existing `override` database)
+
+**Benefits:**
+- ✅ No additional RDS costs (~$40-50/month saved)
+- ✅ Complete isolation from Rails app (separate databases)
+- ✅ Same security groups/VPC already configured
+- ✅ Same backup policy already in place
+
+**Setup Required:**
+1. Connect to each RDS instance via psql
+2. Create new databases: `healthie_intake_production` and `healthie_intake_staging`
+3. Grant permissions to `override` user (already master user)
+4. Update FastAPI `.env` with new database connection strings
+
+**Compute & Web Server:**
 *(To be defined)*
 
 ### CI/CD Pipeline
