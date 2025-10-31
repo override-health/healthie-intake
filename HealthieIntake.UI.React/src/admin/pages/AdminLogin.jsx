@@ -11,8 +11,8 @@ function AdminLogin() {
     e.preventDefault();
 
     // Simple auth for now - will enhance later
-    // TODO: Replace with proper authentication
-    if (username === 'admin' && password === 'admin123') {
+    // TODO: Replace with proper authentication (Google OAuth planned)
+    if (username === 'overrideadmin' && password === '$Override3887') {
       // Store auth token (simple for now)
       localStorage.setItem('admin_auth', 'true');
       navigate('/admin/dashboard');
@@ -76,7 +76,7 @@ function AdminLogin() {
 
               <div className="mt-3 text-center">
                 <small className="text-muted">
-                  Demo credentials: admin / admin123
+                  Contact admin for credentials
                 </small>
               </div>
             </div>
