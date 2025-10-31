@@ -75,6 +75,10 @@ const IntakeForm = () => {
   // Physical activity description (custom field - sub-question)
   const [physicalActivityDescription, setPhysicalActivityDescription] = useState('');
 
+  // Medications list (custom field - replaces textarea with structured input)
+  const [medications, setMedications] = useState([]);
+  // Each medication: { id: uniqueId, drugName: '', dosage: '', directions: '' }
+
   // Test mode - bypass validation
   const [testMode, setTestMode] = useState(false);
 
@@ -112,7 +116,7 @@ const IntakeForm = () => {
     if (form && draftLoaded) {
       saveFormProgress();
     }
-  }, [formAnswers, dateMonths, dateDays, dateYears, checkboxSelections, currentStep, primaryLanguage, primaryLanguageOther, primaryCareProviderPhone, emergencyContactName, emergencyContactRelationship, emergencyContactPhone, hospitalizedRecently, hasMedicationAllergies, participatingInPT, draftLoaded]);
+  }, [formAnswers, dateMonths, dateDays, dateYears, checkboxSelections, currentStep, primaryLanguage, primaryLanguageOther, primaryCareProviderPhone, emergencyContactName, emergencyContactRelationship, emergencyContactPhone, hospitalizedRecently, hasMedicationAllergies, participatingInPT, medications, draftLoaded]);
 
   // Calculate BMI when height or weight changes
   useEffect(() => {
@@ -330,7 +334,8 @@ const IntakeForm = () => {
         hasMedicationAllergies,
         participatingInPT,
         engagesInPhysicalActivity,
-        physicalActivityDescription
+        physicalActivityDescription,
+        medications
       };
       localStorage.setItem(getStorageKey(), JSON.stringify(progress));
     } catch (error) {
@@ -370,6 +375,7 @@ const IntakeForm = () => {
         if (progress.participatingInPT) setParticipatingInPT(progress.participatingInPT);
         if (progress.engagesInPhysicalActivity) setEngagesInPhysicalActivity(progress.engagesInPhysicalActivity);
         if (progress.physicalActivityDescription) setPhysicalActivityDescription(progress.physicalActivityDescription);
+        if (progress.medications) setMedications(progress.medications);
       }
     } catch (error) {
       console.log('Failed to load progress:', error.message);
@@ -447,7 +453,8 @@ const IntakeForm = () => {
           hasMedicationAllergies,
           participatingInPT,
           engagesInPhysicalActivity,
-          physicalActivityDescription
+          physicalActivityDescription,
+          medications
         }
       };
 
@@ -473,14 +480,22 @@ const IntakeForm = () => {
 
     if (!confirmClear) return;
 
+    // Store patient ID before resetting state
+    const clearingPatientId = patientId;
+
     try {
       // 1. Delete draft from database
-      await axios.delete(`${API_BASE_URL}/api/intake/draft/${patientId}`, {
+      await axios.delete(`${API_BASE_URL}/api/intake/draft/${clearingPatientId}`, {
         validateStatus: (status) => status === 200 || status === 404 // 404 is OK if no draft exists
       });
 
-      // 2. Clear localStorage
-      localStorage.removeItem(`healthie_intake_${patientId}`);
+      // 2. Clear localStorage explicitly
+      try {
+        localStorage.removeItem(`healthie_intake_${clearingPatientId}`);
+        console.log(`Cleared localStorage for patient ${clearingPatientId}`);
+      } catch (error) {
+        console.log('Failed to clear localStorage:', error.message);
+      }
 
       // 3. Reset all form state to initial values
       setFormAnswers({});
@@ -500,11 +515,12 @@ const IntakeForm = () => {
       setParticipatingInPT(null);
       setEngagesInPhysicalActivity(null);
       setPhysicalActivityDescription('');
+      setMedications([]);
       setDraftLoaded(false);
 
       // 4. Clear patient selection and return to search
-      setPatientId(DEFAULT_PATIENT_ID);
-      setSearchStatus(null);
+      setPatientId('');
+      setSearchStatus('idle');
       setSearchedPatients([]);
       setSearchFirstName('');
       setSearchLastName('');
@@ -521,6 +537,28 @@ const IntakeForm = () => {
       console.error('Error clearing form:', error);
       alert('There was an error clearing your progress. Please try again.');
     }
+  };
+
+  // Medication management handlers
+  const addMedication = () => {
+    const newMedication = {
+      id: Date.now(), // Simple unique ID
+      drugName: '',
+      dosage: '',
+      startDate: '',
+      directions: ''
+    };
+    setMedications([...medications, newMedication]);
+  };
+
+  const removeMedication = (id) => {
+    setMedications(medications.filter(med => med.id !== id));
+  };
+
+  const updateMedication = (id, field, value) => {
+    setMedications(medications.map(med =>
+      med.id === id ? { ...med, [field]: value } : med
+    ));
   };
 
   const loadMostRecentDraft = async (healthieId) => {
@@ -600,6 +638,7 @@ const IntakeForm = () => {
         if (formData.participatingInPT) setParticipatingInPT(formData.participatingInPT);
         if (formData.engagesInPhysicalActivity) setEngagesInPhysicalActivity(formData.engagesInPhysicalActivity);
         if (formData.physicalActivityDescription) setPhysicalActivityDescription(formData.physicalActivityDescription);
+        if (formData.medications) setMedications(formData.medications);
       } else {
         // localStorage format is flat
         if (draft.currentStep) setCurrentStep(draft.currentStep);
@@ -628,6 +667,7 @@ const IntakeForm = () => {
         if (draft.participatingInPT) setParticipatingInPT(draft.participatingInPT);
         if (draft.engagesInPhysicalActivity) setEngagesInPhysicalActivity(draft.engagesInPhysicalActivity);
         if (draft.physicalActivityDescription) setPhysicalActivityDescription(draft.physicalActivityDescription);
+        if (draft.medications) setMedications(draft.medications);
       }
 
       console.log(`Draft loaded from ${source}`);
@@ -868,6 +908,9 @@ const IntakeForm = () => {
       }
     }
 
+    // NOTE: Medications with blank drug names are silently ignored on submission
+    // No validation needed - users can leave empty medication rows
+
     // Check all required fields for current step
     modulesForStep.forEach(module => {
       // Skip non-input fields
@@ -1057,6 +1100,28 @@ const IntakeForm = () => {
         if (physicalActivityDescription.trim()) {
           combinedFormAnswers['physical_activity_description'] = physicalActivityDescription;
         }
+
+        // Add Medications list (module 19056481)
+        if (medications.length > 0) {
+          // Filter out empty medications (where drugName is empty)
+          const validMedications = medications.filter(med => med.drugName && med.drugName.trim());
+
+          if (validMedications.length > 0) {
+            // Format medications as readable text for Healthie
+            const medicationsText = validMedications.map(med => {
+              const parts = [med.drugName];
+              if (med.dosage && med.dosage.trim()) parts.push(`- ${med.dosage}`);
+              if (med.startDate && med.startDate.trim()) parts.push(`- Started: ${med.startDate}`);
+              if (med.directions && med.directions.trim()) parts.push(`- ${med.directions}`);
+              return parts.join(' ');
+            }).join('\n');
+
+            combinedFormAnswers['19056481'] = medicationsText;
+
+            // Also store structured data for future use
+            combinedFormAnswers['medications_structured'] = validMedications;
+          }
+        }
       }
 
       // Capture all signatures DIRECTLY into combinedFormAnswers (not using state)
@@ -1149,6 +1214,7 @@ const IntakeForm = () => {
           participating_in_pt: participatingInPT,
           engages_in_physical_activity: engagesInPhysicalActivity,
           physical_activity_description: physicalActivityDescription,
+          medications: medications.filter(med => med.drugName && med.drugName.trim()),
 
           // BMI fields
           height_feet: heightFeet,
@@ -1157,15 +1223,49 @@ const IntakeForm = () => {
         }
       };
 
-      // Submit to MongoDB API
+      // Submit to PostgreSQL API
       const response = await axios.post(`${API_BASE_URL}/api/intake/submit`, mongoSubmission);
 
       if (response.data && response.data.intake_id) {
+        // Store patient ID before resetting state
+        const submittedPatientId = patientId;
+
         // Show Thank You page
         setShowThankYou(true);
 
-        // Clear localStorage after successful submission
-        clearFormProgress();
+        // Explicitly clear localStorage using the patient ID before we reset it
+        try {
+          localStorage.removeItem(`healthie_intake_${submittedPatientId}`);
+          console.log(`Cleared localStorage for patient ${submittedPatientId}`);
+        } catch (error) {
+          console.log('Failed to clear localStorage:', error.message);
+        }
+
+        // Delete draft from database (it's now converted to completed status)
+        // This ensures a clean state if user returns to the site
+        try {
+          await axios.delete(`${API_BASE_URL}/api/intake/draft/${submittedPatientId}`, {
+            validateStatus: (status) => status === 200 || status === 404 // 404 is OK
+          });
+        } catch (error) {
+          console.log('Draft already cleared or converted to completed status');
+        }
+
+        // Reset patient search state to force fresh start on next visit
+        setPatientId('');
+        setSearchFirstName('');
+        setSearchLastName('');
+        setSearchDOB('');
+        setSearchedPatients([]);
+        setSearchStatus('idle');
+        setHasCompletedIntake(false);
+        setCompletedIntakeInfo(null);
+        setHealthieFirstName('');
+        setHealthieLastName('');
+        setHealthieEmail('');
+        setHealthieDOB('');
+        setCurrentStep(1);
+        setMedications([]);
 
         // Reset form
         setFormAnswers({});
@@ -1646,6 +1746,87 @@ const IntakeForm = () => {
               </div>
             </div>
           </div>
+        </div>
+      );
+    }
+
+    // CHANGE: Current medications list - Replace textarea with structured medication input
+    if (module.id === '19056481') {
+      return (
+        <div key={module.id} className="mb-4">
+          <label className="form-label fw-bold">
+            {getFieldLabel(module.label)}
+          </label>
+
+          {/* Hint text */}
+          <p className="text-muted mb-3" style={{ fontSize: '0.9rem' }}>
+            Click "Add Medication" to list your current medications, or leave empty if you don't take any medications.
+          </p>
+
+          {/* Add medication button */}
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-primary mb-3"
+            onClick={addMedication}
+          >
+            + Add Medication
+          </button>
+
+          {/* Medications list */}
+          {medications.length > 0 && (
+            <div>
+              {medications.map((med, index) => (
+                <div key={med.id} className="row mb-3 align-items-center">
+                  <div className="col-12 col-md-3 mb-2 mb-md-0">
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Drug Name *"
+                      value={med.drugName}
+                      onChange={(e) => updateMedication(med.id, 'drugName', e.target.value)}
+                    />
+                  </div>
+                  <div className="col-12 col-md-2 mb-2 mb-md-0">
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Dosage"
+                      value={med.dosage}
+                      onChange={(e) => updateMedication(med.id, 'dosage', e.target.value)}
+                    />
+                  </div>
+                  <div className="col-12 col-md-2 mb-2 mb-md-0">
+                    <input
+                      type="date"
+                      className="form-control"
+                      placeholder="Start Date"
+                      value={med.startDate}
+                      onChange={(e) => updateMedication(med.id, 'startDate', e.target.value)}
+                    />
+                  </div>
+                  <div className="col-12 col-md-4 mb-2 mb-md-0">
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Directions"
+                      value={med.directions}
+                      onChange={(e) => updateMedication(med.id, 'directions', e.target.value)}
+                    />
+                  </div>
+                  <div className="col-12 col-md-1 text-center">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-danger"
+                      onClick={() => removeMedication(med.id)}
+                      title="Remove medication"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       );
     }
