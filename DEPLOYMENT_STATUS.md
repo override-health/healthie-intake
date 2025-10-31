@@ -1,7 +1,7 @@
 # Deployment Status
 
 **Last Updated:** 2025-10-31
-**Current Status:** Infrastructure Complete, Staging Software Installed
+**Current Status:** ✅ Staging Environment LIVE at https://onboarding-staging.override.health
 
 ---
 
@@ -17,13 +17,22 @@
 - Network ACLs updated
 
 ### Staging Software Stack
-- ✅ nginx 1.28.0
+- ✅ nginx 1.28.0 (running, auto-start enabled)
 - ✅ Python 3.11.14
 - ✅ Node.js 18.20.8
 - ✅ npm 10.8.2
-- ✅ PM2 6.0.13
-- ✅ Certbot 2.6.0
+- ✅ PM2 6.0.13 (healthie-api-staging process running, auto-start enabled)
+- ✅ Certbot 2.6.0 (SSL certificate installed, auto-renewal configured)
 - ✅ git installed
+
+### Staging Deployment
+- ✅ Repository cloned to /var/www/healthie-intake
+- ✅ React app built and deployed to nginx (dist/)
+- ✅ FastAPI backend running on port 5096 (managed by PM2)
+- ✅ nginx reverse proxy configured (/api → backend)
+- ✅ SSL certificate installed (expires 2026-01-29)
+- ✅ HTTP → HTTPS redirect enabled
+- ✅ Database connected (0 intakes)
 
 ### Code
 - ✅ Admin credentials updated: `overrideadmin` / `$Override3887`
@@ -33,22 +42,24 @@
 
 ## 🔄 Next Steps
 
-### Staging Deployment (Next Session)
-1. Clone repository to /var/www/healthie-intake
-2. Build React frontend with staging config
-3. Set up Python backend with staging database
-4. Configure nginx reverse proxy
-5. Set up SSL certificate (Let's Encrypt)
-6. Test staging environment
+### Staging Testing & Configuration
+1. ✅ Staging environment is live at https://onboarding-staging.override.health
+2. Test form submission with staging Healthie account
+3. Verify admin dashboard access (credentials: overrideadmin / $Override3887)
+4. Confirm form data properly saves to staging database
+5. Test draft functionality
 
-### Production Deployment (After Staging Verified)
-1. Repeat process on production EC2
+### Production Deployment (When Ready)
+1. Repeat deployment process on production EC2 (3.22.163.3)
 2. Use production database credentials
-3. Test production environment
+3. Configure production Healthie API key
+4. Set up SSL certificate for onboarding.override.health
+5. Test production environment thoroughly
 
-### CI/CD Setup (Final Step)
+### CI/CD Setup (Optional - After Production Launch)
 1. Create GitHub Actions workflows
 2. Automate deployments on push to main
+3. Add automated testing
 
 ---
 

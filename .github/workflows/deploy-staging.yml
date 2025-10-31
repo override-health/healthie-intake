@@ -1,0 +1,114 @@
+name: Deploy to Staging
+
+# Trigger on push to main branch or manual dispatch
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allows manual triggering from GitHub UI
+
+jobs:
+  deploy:
+    name: Deploy to Staging Environment
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: HealthieIntake.UI.React/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/staging_key
+          chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -H 18.119.3.99 >> ~/.ssh/known_hosts
+
+      - name: Build React Frontend
+        working-directory: ./HealthieIntake.UI.React
+        env:
+          VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to Staging Server
+        env:
+          STAGING_HOST: 18.119.3.99
+          STAGING_USER: ec2-user
+        run: |
+          # Deploy frontend build
+          echo "Deploying frontend..."
+          rsync -avz --delete -e "ssh -i ~/.ssh/staging_key -o StrictHostKeyChecking=no" \
+            ./HealthieIntake.UI.React/dist/ \
+            ${STAGING_USER}@${STAGING_HOST}:/var/www/healthie-intake/HealthieIntake.UI.React/dist/
+
+          # Deploy backend code
+          echo "Deploying backend..."
+          rsync -avz --delete -e "ssh -i ~/.ssh/staging_key -o StrictHostKeyChecking=no" \
+            --exclude='.env' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            ./HealthieIntake.Api.Py/ \
+            ${STAGING_USER}@${STAGING_HOST}:/var/www/healthie-intake/HealthieIntake.Api.Py/
+
+          # Install Python dependencies and restart backend
+          echo "Installing dependencies and restarting backend..."
+          ssh -i ~/.ssh/staging_key -o StrictHostKeyChecking=no ${STAGING_USER}@${STAGING_HOST} << 'EOF'
+            cd /var/www/healthie-intake/HealthieIntake.Api.Py
+            pip3.11 install -r requirements.txt
+            pm2 restart healthie-api-staging
+            sleep 3
+            pm2 status
+          EOF
+
+      - name: Verify Deployment
+        env:
+          STAGING_HOST: 18.119.3.99
+          STAGING_USER: ec2-user
+        run: |
+          echo "Verifying deployment..."
+
+          # Check backend health
+          ssh -i ~/.ssh/staging_key -o StrictHostKeyChecking=no ${STAGING_USER}@${STAGING_HOST} \
+            'curl -f http://localhost:5096/health || exit 1'
+
+          # Check PM2 status
+          ssh -i ~/.ssh/staging_key -o StrictHostKeyChecking=no ${STAGING_USER}@${STAGING_HOST} \
+            'pm2 status | grep healthie-api-staging | grep online || exit 1'
+
+          # Check public HTTPS endpoint
+          sleep 5
+          curl -f https://onboarding-staging.override.health/health || exit 1
+
+          echo "✅ Deployment verified successfully!"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f ~/.ssh/staging_key
+
+      - name: Notify on Success
+        if: success()
+        run: |
+          echo "🚀 Staging deployment successful!"
+          echo "View at: https://onboarding-staging.override.health"
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Staging deployment failed!"
+          echo "Check logs for details"
