@@ -4,6 +4,11 @@
 **Date Started:** 2025-10-31
 **Status:** Planning Phase
 
+**Repository:**
+- **Current:** https://github.com/override-health/healthie-intake
+- **Previous:** https://github.com/c88951/healthie-intake (personal - to be archived later)
+- **Decision:** Created new org repo, pushed all branches/tags, will clean up personal repo later
+
 ---
 
 ## Current Application Architecture
