@@ -79,6 +79,10 @@ const IntakeForm = () => {
   const [medications, setMedications] = useState([]);
   // Each medication: { id: uniqueId, drugName: '', dosage: '', startDate: '', directions: '' }
 
+  // Past Medications list (Question 6 - uses endDate instead of startDate)
+  const [pastMedications, setPastMedications] = useState([]);
+  // Each past medication: { id: uniqueId, drugName: '', dosage: '', endDate: '', directions: '' }
+
   // Medication autocomplete state (openFDA API)
   const [medicationSuggestions, setMedicationSuggestions] = useState({});
   const [showSuggestions, setShowSuggestions] = useState({});
@@ -124,7 +128,7 @@ const IntakeForm = () => {
     if (form && draftLoaded) {
       saveFormProgress();
     }
-  }, [formAnswers, dateMonths, dateDays, dateYears, checkboxSelections, currentStep, primaryLanguage, primaryLanguageOther, primaryCareProviderPhone, emergencyContactName, emergencyContactRelationship, emergencyContactPhone, hospitalizedRecently, hasMedicationAllergies, participatingInPT, medications, draftLoaded]);
+  }, [formAnswers, dateMonths, dateDays, dateYears, checkboxSelections, currentStep, primaryLanguage, primaryLanguageOther, primaryCareProviderPhone, emergencyContactName, emergencyContactRelationship, emergencyContactPhone, hospitalizedRecently, hasMedicationAllergies, participatingInPT, medications, pastMedications, draftLoaded]);
 
   // Calculate BMI when height or weight changes
   useEffect(() => {
@@ -343,7 +347,8 @@ const IntakeForm = () => {
         participatingInPT,
         engagesInPhysicalActivity,
         physicalActivityDescription,
-        medications
+        medications,
+        pastMedications
       };
       localStorage.setItem(getStorageKey(), JSON.stringify(progress));
     } catch (error) {
@@ -384,6 +389,7 @@ const IntakeForm = () => {
         if (progress.engagesInPhysicalActivity) setEngagesInPhysicalActivity(progress.engagesInPhysicalActivity);
         if (progress.physicalActivityDescription) setPhysicalActivityDescription(progress.physicalActivityDescription);
         if (progress.medications) setMedications(progress.medications);
+        if (progress.pastMedications) setPastMedications(progress.pastMedications);
       }
     } catch (error) {
       console.log('Failed to load progress:', error.message);
@@ -524,6 +530,7 @@ const IntakeForm = () => {
       setEngagesInPhysicalActivity(null);
       setPhysicalActivityDescription('');
       setMedications([]);
+      setPastMedications([]);
       setDraftLoaded(false);
 
       // 4. Clear patient selection and return to search
@@ -565,6 +572,28 @@ const IntakeForm = () => {
 
   const updateMedication = (id, field, value) => {
     setMedications(medications.map(med =>
+      med.id === id ? { ...med, [field]: value } : med
+    ));
+  };
+
+  // Past medication handlers (Question 6 - uses endDate)
+  const addPastMedication = () => {
+    const newMedication = {
+      id: Date.now(), // Simple unique ID
+      drugName: '',
+      dosage: '',
+      endDate: '', // End date instead of start date
+      directions: ''
+    };
+    setPastMedications([...pastMedications, newMedication]);
+  };
+
+  const removePastMedication = (id) => {
+    setPastMedications(pastMedications.filter(med => med.id !== id));
+  };
+
+  const updatePastMedication = (id, field, value) => {
+    setPastMedications(pastMedications.map(med =>
       med.id === id ? { ...med, [field]: value } : med
     ));
   };
@@ -675,6 +704,33 @@ const IntakeForm = () => {
   // Clear drug name field
   const clearDrugName = (medicationId) => {
     updateMedication(medicationId, 'drugName', '');
+    setShowSuggestions({ ...showSuggestions, [medicationId]: false });
+    setSelectedSuggestionIndex({ ...selectedSuggestionIndex, [medicationId]: -1 });
+  };
+
+  // Past medication autocomplete handlers
+  const handlePastDrugNameChange = (id, value) => {
+    updatePastMedication(id, 'drugName', value);
+
+    // Debounced search (uses same search function and cache)
+    const debouncedSearch = debounce(searchMedications, 300, id);
+    debouncedSearch(value, id);
+  };
+
+  const selectPastSuggestion = (medicationId, suggestion) => {
+    updatePastMedication(medicationId, 'drugName', suggestion);
+    setShowSuggestions({ ...showSuggestions, [medicationId]: false });
+    setSelectedSuggestionIndex({ ...selectedSuggestionIndex, [medicationId]: -1 });
+
+    // Track recently selected medications (shared with current meds)
+    setRecentSelections(prev => {
+      const filtered = prev.filter(item => item !== suggestion);
+      return [suggestion, ...filtered].slice(0, 10);
+    });
+  };
+
+  const clearPastDrugName = (medicationId) => {
+    updatePastMedication(medicationId, 'drugName', '');
     setShowSuggestions({ ...showSuggestions, [medicationId]: false });
     setSelectedSuggestionIndex({ ...selectedSuggestionIndex, [medicationId]: -1 });
   };
@@ -826,6 +882,7 @@ const IntakeForm = () => {
         if (formData.engagesInPhysicalActivity) setEngagesInPhysicalActivity(formData.engagesInPhysicalActivity);
         if (formData.physicalActivityDescription) setPhysicalActivityDescription(formData.physicalActivityDescription);
         if (formData.medications) setMedications(formData.medications);
+        if (formData.pastMedications) setPastMedications(formData.pastMedications);
       } else {
         // localStorage format is flat
         if (draft.currentStep) setCurrentStep(draft.currentStep);
@@ -855,6 +912,7 @@ const IntakeForm = () => {
         if (draft.engagesInPhysicalActivity) setEngagesInPhysicalActivity(draft.engagesInPhysicalActivity);
         if (draft.physicalActivityDescription) setPhysicalActivityDescription(draft.physicalActivityDescription);
         if (draft.medications) setMedications(draft.medications);
+        if (draft.pastMedications) setPastMedications(draft.pastMedications);
       }
 
       console.log(`Draft loaded from ${source}`);
@@ -1309,6 +1367,28 @@ const IntakeForm = () => {
             combinedFormAnswers['medications_structured'] = validMedications;
           }
         }
+
+        // Add Past Medications list (module 19056482)
+        if (pastMedications.length > 0) {
+          // Filter out empty medications (where drugName is empty)
+          const validPastMedications = pastMedications.filter(med => med.drugName && med.drugName.trim());
+
+          if (validPastMedications.length > 0) {
+            // Format past medications as readable text for Healthie
+            const pastMedicationsText = validPastMedications.map(med => {
+              const parts = [med.drugName];
+              if (med.dosage && med.dosage.trim()) parts.push(`- ${med.dosage}`);
+              if (med.endDate && med.endDate.trim()) parts.push(`- Ended: ${med.endDate}`);
+              if (med.directions && med.directions.trim()) parts.push(`- ${med.directions}`);
+              return parts.join(' ');
+            }).join('\n');
+
+            combinedFormAnswers['19056482'] = pastMedicationsText;
+
+            // Also store structured data for future use
+            combinedFormAnswers['past_medications_structured'] = validPastMedications;
+          }
+        }
       }
 
       // Capture all signatures DIRECTLY into combinedFormAnswers (not using state)
@@ -1402,6 +1482,7 @@ const IntakeForm = () => {
           engages_in_physical_activity: engagesInPhysicalActivity,
           physical_activity_description: physicalActivityDescription,
           medications: medications.filter(med => med.drugName && med.drugName.trim()),
+          pastMedications: pastMedications.filter(med => med.drugName && med.drugName.trim()),
 
           // BMI fields
           height_feet: heightFeet,
@@ -1453,6 +1534,7 @@ const IntakeForm = () => {
         setHealthieDOB('');
         setCurrentStep(1);
         setMedications([]);
+        setPastMedications([]);
 
         // Reset form
         setFormAnswers({});
@@ -2027,6 +2109,7 @@ const IntakeForm = () => {
                       {med.drugName && (
                         <button
                           type="button"
+                          tabIndex={-1}
                           onClick={() => clearDrugName(med.id)}
                           style={{
                             position: 'absolute',
@@ -2154,6 +2237,237 @@ const IntakeForm = () => {
                       type="button"
                       className="btn btn-sm btn-outline-danger"
                       onClick={() => removeMedication(med.id)}
+                      title="Remove medication"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // CHANGE: Past medications list - Replace textarea with structured medication input (Question 6)
+    if (module.id === '19056482') {
+      return (
+        <div key={module.id} className="mb-4">
+          <label className="form-label fw-bold">
+            {getFieldLabel(module.label)}
+          </label>
+
+          {/* Hint text */}
+          <p className="text-muted mb-3" style={{ fontSize: '0.9rem' }}>
+            Click "Add Past Medication" to list medications you've taken in the past but are no longer taking, or leave empty if not applicable.
+          </p>
+
+          {/* Add past medication button */}
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-primary mb-3"
+            onClick={addPastMedication}
+          >
+            + Add Past Medication
+          </button>
+
+          {/* Past Medications list */}
+          {pastMedications.length > 0 && (
+            <div>
+              <style>{`
+                @media (min-width: 768px) {
+                  .past-med-field-drugname { flex: 0 0 35% !important; max-width: 35% !important; }
+                  .past-med-field-dosage { flex: 0 0 11.67% !important; max-width: 11.67% !important; }
+                  .past-med-field-enddate { flex: 0 0 15% !important; max-width: 15% !important; }
+                  .past-med-field-directions { flex: 0 0 30% !important; max-width: 30% !important; }
+                  .past-med-field-remove { flex: 0 0 8.33% !important; max-width: 8.33% !important; }
+                  .past-medication-header { display: flex !important; }
+                  .past-mobile-field-label { display: none !important; }
+                }
+                @media (max-width: 767px) {
+                  .past-medication-header { display: none !important; }
+                  .past-mobile-field-label { display: block !important; }
+                }
+              `}</style>
+              {/* Column headers (desktop only) */}
+              <div className="row mb-2 past-medication-header" style={{ display: 'none' }}>
+                <div className="past-med-field-drugname">
+                  <small className="text-muted" style={{ fontWeight: '600', fontSize: '0.75rem' }}>Drug Name</small>
+                </div>
+                <div className="past-med-field-dosage">
+                  <small className="text-muted" style={{ fontWeight: '600', fontSize: '0.75rem' }}>Dosage</small>
+                </div>
+                <div className="past-med-field-enddate">
+                  <small className="text-muted" style={{ fontWeight: '600', fontSize: '0.75rem' }}>End Date</small>
+                </div>
+                <div className="past-med-field-directions">
+                  <small className="text-muted" style={{ fontWeight: '600', fontSize: '0.75rem' }}>Directions</small>
+                </div>
+                <div className="past-med-field-remove">
+                  <small className="text-muted" style={{ fontWeight: '600', fontSize: '0.75rem' }}></small>
+                </div>
+              </div>
+              {pastMedications.map((med, index) => (
+                <div key={med.id} className="row mb-3 align-items-center">
+                  <div className="col-12 mb-2 mb-md-0 medication-autocomplete-wrapper past-med-field-drugname" style={{ position: 'relative' }}>
+                    <label className="past-mobile-field-label" style={{ display: 'none', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.25rem', color: '#495057' }}>
+                      Drug Name *
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Drug Name *"
+                        value={med.drugName}
+                        onChange={(e) => handlePastDrugNameChange(med.id, e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, med.id)}
+                        onFocus={() => {
+                          // Show suggestions if already searched
+                          if (med.drugName.length >= 3 && medicationSuggestions[med.id]?.length > 0) {
+                            setShowSuggestions({ ...showSuggestions, [med.id]: true });
+                          }
+                          // Show recent selections if field is empty
+                          else if (med.drugName.length === 0 && recentSelections.length > 0) {
+                            setMedicationSuggestions({ ...medicationSuggestions, [med.id]: recentSelections });
+                            setShowSuggestions({ ...showSuggestions, [med.id]: true });
+                            setSelectedSuggestionIndex({ ...selectedSuggestionIndex, [med.id]: -1 });
+                          }
+                        }}
+                        style={{ paddingRight: med.drugName ? '30px' : '12px' }}
+                      />
+                      {/* Clear button (X) */}
+                      {med.drugName && (
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => clearPastDrugName(med.id)}
+                          style={{
+                            position: 'absolute',
+                            right: '8px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            border: 'none',
+                            background: 'transparent',
+                            cursor: 'pointer',
+                            color: '#6c757d',
+                            fontSize: '18px',
+                            padding: '0',
+                            lineHeight: '1',
+                            width: '20px',
+                            height: '20px'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = '#dc3545'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = '#6c757d'}
+                          title="Clear"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                    {/* Autocomplete dropdown */}
+                    {showSuggestions[med.id] && medicationSuggestions[med.id]?.length > 0 && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          backgroundColor: 'white',
+                          border: '1px solid #ced4da',
+                          borderRadius: '0.25rem',
+                          marginTop: '2px',
+                          maxHeight: '200px',
+                          overflowY: 'auto',
+                          zIndex: 1000,
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                        }}
+                      >
+                        {/* Header for recent selections */}
+                        {med.drugName.length === 0 && recentSelections.length > 0 && (
+                          <div style={{
+                            padding: '6px 12px',
+                            fontSize: '0.75rem',
+                            color: '#6c757d',
+                            borderBottom: '1px solid #e9ecef',
+                            backgroundColor: '#f8f9fa'
+                          }}>
+                            Recently Selected
+                          </div>
+                        )}
+                        {medicationSuggestions[med.id].map((suggestion, idx) => {
+                          const isSelected = idx === (selectedSuggestionIndex[med.id] ?? -1);
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => selectPastSuggestion(med.id, suggestion)}
+                              style={{
+                                padding: '8px 12px',
+                                cursor: 'pointer',
+                                borderBottom: idx < medicationSuggestions[med.id].length - 1 ? '1px solid #f0f0f0' : 'none',
+                                backgroundColor: isSelected ? '#e7f3ff' : 'white'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isSelected) e.currentTarget.style.backgroundColor = '#f8f9fa';
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isSelected) e.currentTarget.style.backgroundColor = 'white';
+                              }}
+                            >
+                              {highlightMatch(suggestion, med.drugName)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {/* Loading indicator */}
+                    {loadingSuggestions[med.id] && (
+                      <small className="text-muted" style={{ fontSize: '0.75rem' }}>
+                        Searching medications...
+                      </small>
+                    )}
+                  </div>
+                  <div className="col-12 mb-2 mb-md-0 past-med-field-dosage">
+                    <label className="past-mobile-field-label" style={{ display: 'none', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.25rem', color: '#495057' }}>
+                      Dosage
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Dosage"
+                      value={med.dosage}
+                      onChange={(e) => updatePastMedication(med.id, 'dosage', e.target.value)}
+                    />
+                  </div>
+                  <div className="col-12 mb-2 mb-md-0 past-med-field-enddate">
+                    <label className="past-mobile-field-label" style={{ display: 'none', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.25rem', color: '#495057' }}>
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      placeholder="End Date"
+                      value={med.endDate}
+                      onChange={(e) => updatePastMedication(med.id, 'endDate', e.target.value)}
+                    />
+                  </div>
+                  <div className="col-12 mb-2 mb-md-0 past-med-field-directions">
+                    <label className="past-mobile-field-label" style={{ display: 'none', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.25rem', color: '#495057' }}>
+                      Directions
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Directions"
+                      value={med.directions}
+                      onChange={(e) => updatePastMedication(med.id, 'directions', e.target.value)}
+                    />
+                  </div>
+                  <div className="col-12 text-center past-med-field-remove">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-danger"
+                      onClick={() => removePastMedication(med.id)}
                       title="Remove medication"
                     >
                       ×

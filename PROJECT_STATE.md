@@ -1,9 +1,9 @@
 # Healthie Intake Form - Project State
 
-**Last Updated**: 2025-10-30 (Evening Session)
+**Last Updated**: 2025-10-31 (Medication Autocomplete Session)
 **Current Branch**: medication_management
-**Previous Commit**: ccf78cd (Add backend draft support)
-**Working Changes**: Medication management feature + submission cleanup improvements
+**Previous Commit**: q5_auto_complete (Question 5 autocomplete)
+**Working Changes**: Question 5 & 6 autocomplete implementation with openFDA API
 
 ## Overview
 
@@ -72,6 +72,73 @@ This project is a patient intake form system that integrates with Healthie's API
    - Console logging for cleanup verification
    - Applied same pattern to "Clear & Start Over" button
    - Ensures clean state when user returns to site after submission
+
+## Latest Changes (2025-10-31 Session)
+
+### Features Implemented
+
+1. **Medication Autocomplete - Question 5 (Current Medications)** ✅
+   - Module ID: 19056481
+   - openFDA Drug Product (NDC) API integration
+   - API Key: 3yhXgt8QD6o3VEHPgTt38HALhJ8TZVnPquQpKDRa
+   - Searches both generic and brand names with wildcard matching
+   - 3 character minimum, 10 suggestion maximum
+   - 300ms debounce to reduce API calls
+   - Search result caching
+   - Recent selections tracking (last 10)
+   - Keyboard navigation (arrows, Enter, Escape)
+   - Text highlighting in suggestions
+   - Clear button (X) to reset drug name field
+   - Tab navigation skips clear button (tabIndex={-1})
+   - See: MEDICATION_AUTOCOMPLETE.md for full documentation
+
+2. **Medication Autocomplete - Question 6 (Past Medications)** ✅
+   - Module ID: 19056482
+   - Same autocomplete features as Q5
+   - Uses "End Date" instead of "Start Date"
+   - Separate state (pastMedications) and handlers
+   - Shares search cache and recent selections with Q5
+   - Tab navigation skips clear button (tabIndex={-1})
+
+3. **Bug Fixes**
+   - Search query wildcard fix: Changed from exact match to prefix matching
+   - Keyboard navigation fix: Changed `||` to `??` for index 0 handling
+   - Q6 typing fix: Created separate handlers for past medication state
+   - Tab navigation: Added tabIndex={-1} to clear buttons
+
+### Technical Details
+
+**New State Variables**:
+- `pastMedications` - Array of past medication objects
+- `medicationSuggestions` - Autocomplete suggestions by medication ID
+- `showSuggestions` - Dropdown visibility by medication ID
+- `loadingSuggestions` - Loading state by medication ID
+- `selectedSuggestionIndex` - Keyboard navigation index by medication ID
+- `searchCache` - API response cache by query
+- `recentSelections` - Last 10 selected medications
+
+**New Functions**:
+- `searchMedications(query, medicationId)` - openFDA API search
+- `handleDrugNameChange(id, value)` - Q5 drug name handler
+- `handlePastDrugNameChange(id, value)` - Q6 drug name handler
+- `selectSuggestion(medicationId, suggestion)` - Q5 selection
+- `selectPastSuggestion(medicationId, suggestion)` - Q6 selection
+- `clearDrugName(medicationId)` - Q5 clear button
+- `clearPastDrugName(medicationId)` - Q6 clear button
+- `handleKeyDown(e, medicationId)` - Keyboard navigation
+- `highlightMatch(text, query)` - Text highlighting
+- `debounce(func, delay, id)` - Debounce utility
+
+**Draft Persistence**:
+- Added `pastMedications` to localStorage save/load
+- Added `pastMedications` to database draft save/load
+- Added `pastMedications` to state reset functions
+
+**Form Submission**:
+- Q5: Formats as "DrugName - Dosage - Started: Date - Directions"
+- Q6: Formats as "DrugName - Dosage - Ended: Date - Directions"
+- Both stored as structured JSON in database
+- Both sent as text to Healthie API
 
 ## Current Architecture
 
@@ -227,10 +294,24 @@ docker rm healthie-api-py
 - Phone number formatting
 - Responsive design (mobile-friendly)
 - SEO blocking (robots.txt, meta tags)
-- **Structured medication management** (NEW)
+- **Question 5: Current Medications with Autocomplete** (NEW - 2025-10-31)
+  - openFDA API integration for drug name autocomplete
   - Add/remove multiple medications
   - Calendar date picker for start dates
   - Four fields: Drug Name, Dosage, Start Date, Directions
+  - Keyboard navigation (arrows, Enter, Escape)
+  - Recent selections tracking
+  - Search result caching
+  - Text highlighting in dropdown
+  - Clear button (X) with proper tab navigation
+  - Draft persistence and auto-save
+  - Responsive layout
+- **Question 6: Past Medications with Autocomplete** (NEW - 2025-10-31)
+  - Same autocomplete features as Q5
+  - Add/remove multiple past medications
+  - Calendar date picker for end dates
+  - Four fields: Drug Name, Dosage, End Date, Directions
+  - Shares cache and recent selections with Q5
   - Draft persistence and auto-save
   - Responsive layout
 - **Post-submission cleanup** (IMPROVED)
@@ -243,11 +324,19 @@ docker rm healthie-api-py
 - Healthie API sync is manual (will be automated via AWS Lambda later)
 
 ### Pending Tests 🧪
-- Multiple browser testing (Chrome, Safari, Firefox)
-- Mobile device testing (iOS, Android)
+- **Medication Autocomplete (Q5 & Q6)**:
+  - [ ] Multi-browser testing (Chrome, Safari, Firefox)
+  - [ ] Mobile device testing (iOS, Android)
+  - [ ] Keyboard navigation on all browsers
+  - [ ] Cache persistence across sessions
+  - [ ] Recent selections across page refresh
+  - [ ] Large dataset (20+ medications in each question)
+  - [ ] Draft save/load with both Q5 and Q6 populated
+  - [ ] Form submission with both Q5 and Q6 populated
+  - [ ] API rate limiting behavior
+  - [ ] Network failure scenarios
 - Accessibility testing (screen readers, keyboard navigation)
-- Large dataset testing (20+ medications)
-- Medication persistence edge cases
+- Full regression test of all other form fields
 
 ### Pending/Future Work 📋
 - AWS Lambda for automated Healthie sync
@@ -256,17 +345,23 @@ docker rm healthie-api-py
 - Production deployment configuration
 - SSL/HTTPS setup
 - Environment-specific configs (dev/staging/prod)
-- Medication enhancements (autocomplete, duplicate detection, drug interactions)
+- **Medication enhancements**:
+  - Duplicate medication detection
+  - Drug interaction warnings (FDA API)
+  - Dosage autocomplete
+  - Medication frequency field
+  - Import from previous submissions
 
 ## Git Workflow
 
 **Branches**:
 - `main` - Stable branch
 - `db_cache` - Recently merged draft support work (merged)
-- `medication_management` - Current active branch (2025-10-30 evening work)
+- `medication_management` - Current active branch (2025-10-31 session)
 
 **Recent Commits**:
 ```
+q5_auto_complete - Question 5 autocomplete implementation (2025-10-31)
 ccf78cd - Add backend draft support - DB schema, API endpoints, repository methods
 aaa4989 - Add search engine blocking (robots.txt + meta tags)
 7385172 - healthie account lookup working
@@ -274,11 +369,17 @@ c8355a7 - feat: Add comprehensive mobile responsive improvements
 ```
 
 **Uncommitted Changes on medication_management Branch**:
-- Structured medication management feature (IntakeForm.jsx)
-- Start date calendar picker implementation
-- Post-submission cleanup improvements
-- clearAndStartOver consistency updates
-- Documentation files (MEDICATION_MANAGEMENT.md, PROJECT_STATE.md updates)
+- Question 6 (Past Medications) autocomplete implementation
+- Q6 state variables and handlers (pastMedications)
+- Q6 UI with dropdown, keyboard nav, clear button
+- Bug fixes:
+  - Search query wildcard matching
+  - Keyboard navigation index 0 fix
+  - Q6 typing bug fix (separate handlers)
+  - Tab navigation improvement (tabIndex={-1})
+- Draft persistence for pastMedications
+- Form submission formatting for Q6
+- Documentation files (MEDICATION_AUTOCOMPLETE.md, PROJECT_STATE.md updates)
 
 ## How to Continue Work
 
